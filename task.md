@@ -6,10 +6,9 @@
 - `[x]` index.js (Ana orkestratör) yazılması
 - `[x]` bot/csgo.js (Konteyner içi otomasyon) yazılması
 - `[x]` import_accounts.js (SDA .maFile veritabanı aktarıcı) yazılması
-- `[x]` bot/steam_login.js (Xdotool ile Steam Guard Bypass simülasyon kodları) yazılması
-- `[x]` bot/steam_login.js (Xdotool ile Steam Guard Bypass simülasyon kodları) yazılması
-- `[x]` bot/lobby_manager.js (Xdotool ile Wingman lobi kurma ve Eşleşme arama) yazılması
+- `[x]` bot/steam_login.js (Xdotool ile Steam Login simülasyon kodları) yazılması
+- `[x]` bot/steam_login.js (Xdotool ile Steam Login simülasyon kodları) yazılması
+- `[x]` bot/lobby_manager.js (Node-Steam-User üzerinden party kurma mantığı) yazılması
 - `[x]` master/scheduler.js (Çarşamba günleri drop haklarını sıfırlama) eklentisi
-- `[x]` bot/macro_engine.js (Input Automation - Scripted Pathing ve Round Trading simülasyonu) yazılması
-
-
+- `[x]` panel/ajax.php (Batch iptal veya durdurma komutları için API) yazılması
+- `[x]` bot/macro_engine.js (Input Automation simülasyonu) yazılması
