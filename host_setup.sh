@@ -3,7 +3,7 @@
 # Bu script Docker konteynerleri başlamadan ÖNCE host makinede (root yetkisiyle) çalıştırılmalıdır.
 # Amacı: OverlayFS işlemlerini Host seviyesine taşıyarak konteynerleri Privileged modundan kurtarmak.
 
-set -e
+set -euo pipefail
 
 MASTER_DIR="/home/cs.serkaneken.com/cs2_master"
 BASE_DIR="/home/cs.serkaneken.com"
@@ -47,3 +47,4 @@ for i in {1..4}; do
 done
 
 echo "[SONUÇ] Tüm OverlayFS diskleri hazır. Artık 'docker-compose up -d' ile güvenli başlatma yapabilirsiniz."
+

@@ -172,3 +172,4 @@ function watchConsoleLog() {
 }
 
 module.exports = { watchConsoleLog };
+

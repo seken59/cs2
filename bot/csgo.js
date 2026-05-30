@@ -38,12 +38,13 @@ async function startPhysicalGame() {
         console.log(`[BOT-${account.botId}] Steam ve CS2 başlatılıyor... (Proxy: ${account.proxy || 'Yok'})`);
         
         let steamCmd = `xvfb-run -a -n ${90 + parseInt(account.botId)} steam -login ${account.username} ${account.password} -applaunch 730 -low -nosound -textmode -w 320 -h 240 +fps_max 10 -novid -nojoy`;
+        // Basit SOCKS5 proxy parametresi (Örnek kullanım)
+        const steamArgs = ['-a', '-n', `${90 + parseInt(account.botId)}`, 'steam', '-login', account.username, account.password, '-applaunch', '730', '-low', '-nosound', '-textmode', '-w', '320', '-h', '240', '+fps_max', '10', '-novid', '-nojoy'];
         if (account.proxy) {
-            // Basit SOCKS5 proxy parametresi (Örnek kullanım)
-            steamCmd += ` -proxy ${account.proxy}`;
+            steamArgs.push('-proxy', account.proxy);
         }
         
-        const steamProc = exec(steamCmd);
+        const steamProc = spawn('xvfb-run', steamArgs, { shell: false });
 
         // Log dosyasını her maç öncesi sıfırla
         const LOG_FILE = '/home/steamuser/cs2_merged/game/csgo/console.log';
@@ -99,19 +100,19 @@ async function startPhysicalGame() {
     }
 }
 
-const DB_HOST = process.env.DB_HOST;
-const DB_USER = process.env.DB_USER;
-const DB_PASS = process.env.DB_PASS;
+const DATABASE_IP = process.env.DATABASE_IP;
+const DATABASE_USR = process.env.DATABASE_USR;
+const DATABASE_PWD = process.env.DATABASE_PWD;
 const DB_NAME = process.env.DB_NAME;
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const TG_BOT_TOKEN = process.env.TG_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-if (!DB_HOST || !DB_USER || !DB_PASS || !DB_NAME) {
+if (!DATABASE_IP || !DATABASE_USR || !DATABASE_PWD || !DB_NAME) {
     console.error(`[BOT-${account.botId}] CRITICAL ERROR: DB environment variables missing.`);
     process.exit(1);
 }
 
-const botTelegram = TELEGRAM_TOKEN ? new TelegramBot(TELEGRAM_TOKEN, { polling: false }) : null;
+const botTelegram = TG_BOT_TOKEN ? new TelegramBot(TG_BOT_TOKEN, { polling: false }) : null;
 
 function sendTelegram(message) {
     if (botTelegram && CHAT_ID) {
@@ -123,9 +124,9 @@ function sendTelegram(message) {
 async function startHeartbeat() {
     try {
         const db = await mysql.createConnection({
-            host: DB_HOST,
-            user: DB_USER,
-            password: DB_PASS,
+            host: DATABASE_IP,
+            user: DATABASE_USR,
+            password: DATABASE_PWD,
             database: DB_NAME
         });
 
@@ -203,9 +204,9 @@ function checkAndClaimDrop() {
         
         try {
             const db = await mysql.createConnection({
-                host: DB_HOST,
-                user: DB_USER,
-                password: DB_PASS,
+                host: DATABASE_IP,
+                user: DATABASE_USR,
+                password: DATABASE_PWD,
                 database: DB_NAME
             });
 
@@ -268,3 +269,4 @@ function processConsoleOutput(data) {
 
 // Sistemi Tetikle
 startPhysicalGame();
+

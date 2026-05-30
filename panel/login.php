@@ -65,7 +65,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
         if ($adminInfo && password_verify($pass, $adminInfo['password_hash'])) {
             $ga = new GoogleAuthenticator();
-            $checkResult = $ga->verifyCode($adminInfo['totp_secret'], $pin, 2);
+            $checkResult = $ga->verifyCode($adminInfo['MFA_SECRET'], $pin, 2);
 
             if ($checkResult) {
                 session_regenerate_id(true);
@@ -142,3 +142,4 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     </div>
 </body>
 </html>
+

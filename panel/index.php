@@ -269,3 +269,4 @@ $accounts = $db->query("SELECT * FROM accounts ORDER BY id DESC")->fetchAll(PDO:
     </script>
 </body>
 </html>
+

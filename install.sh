@@ -22,3 +22,4 @@ mkdir -p /home/cs2_farm/logs
 touch /home/cs2_farm/db/farm.sqlite
 
 echo "[INFO] Kurulum başarıyla tamamlandı. Node.js (Master) başlatılmaya hazır."
+

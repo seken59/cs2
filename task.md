@@ -11,3 +11,4 @@
 - `[x]` bot/lobby_manager.js (Xdotool ile Wingman lobi kurma ve Eşleşme arama) yazılması
 - `[x]` master/scheduler.js (Çarşamba günleri drop haklarını sıfırlama) eklentisi
 - `[x]` bot/macro_engine.js (VACnet Bypass - Scripted Pathing ve Round Trading simülasyonu) yazılması
+

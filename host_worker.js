@@ -3,20 +3,20 @@ const { spawn } = require('child_process');
 const TelegramBot = require('node-telegram-bot-api');
 
 // MySQL Bağlantısı
-const DB_HOST = process.env.DB_HOST;
-const DB_USER = process.env.DB_USER;
-const DB_PASS = process.env.DB_PASS;
+const DATABASE_IP = process.env.DATABASE_IP;
+const DATABASE_USR = process.env.DATABASE_USR;
+const DATABASE_PWD = process.env.DATABASE_PWD;
 const DB_NAME = process.env.DB_NAME;
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const TG_BOT_TOKEN = process.env.TG_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-if (!DB_HOST || !DB_USER || !DB_PASS || !DB_NAME) {
+if (!DATABASE_IP || !DATABASE_USR || !DATABASE_PWD || !DB_NAME) {
     throw new Error("CRITICAL: Missing required DB environment variables in worker.");
 }
 
 const WORKER_ID = 'host_worker_' + Math.floor(Math.random()*10000);
 
-const botTelegram = TELEGRAM_TOKEN ? new TelegramBot(TELEGRAM_TOKEN, { polling: false }) : null;
+const botTelegram = TG_BOT_TOKEN ? new TelegramBot(TG_BOT_TOKEN, { polling: false }) : null;
 
 function sendTelegram(message) {
     if (botTelegram && CHAT_ID) {
@@ -53,9 +53,9 @@ async function processQueue() {
     let db;
     try {
         db = await mysql.createConnection({
-            host: DB_HOST,
-            user: DB_USER,
-            password: DB_PASS,
+            host: DATABASE_IP,
+            user: DATABASE_USR,
+            password: DATABASE_PWD,
             database: DB_NAME
         });
 
@@ -121,7 +121,7 @@ async function processQueue() {
             dockerStop.on('close', async (code) => {
                 const resultMsg = `Container ${cName} stopped with code ${code}`;
                 const status = code === 0 ? 'COMPLETED' : 'FAILED';
-                const connection = await mysql.createConnection({ host: DB_HOST, user: DB_USER, password: DB_PASS, database: DB_NAME });
+                const connection = await mysql.createConnection({ host: DATABASE_IP, user: DATABASE_USR, password: DATABASE_PWD, database: DB_NAME });
                 if (status === 'FAILED' && task.retry_count < task.max_retry - 1) {
                     await connection.query(`UPDATE action_queue SET status = 'PENDING', retry_count = retry_count + 1, locked_until = NULL WHERE id = ?`, [task.id]);
                 } else {
@@ -136,7 +136,7 @@ async function processQueue() {
             cleanup.on('close', async (code) => {
                 const resultMsg = `Cleanup finished with code ${code}`;
                 const status = code === 0 ? 'COMPLETED' : 'FAILED';
-                const connection = await mysql.createConnection({ host: DB_HOST, user: DB_USER, password: DB_PASS, database: DB_NAME });
+                const connection = await mysql.createConnection({ host: DATABASE_IP, user: DATABASE_USR, password: DATABASE_PWD, database: DB_NAME });
                 await connection.query(`UPDATE action_queue SET status = ?, completed_at = NOW(), result = ? WHERE id = ?`, [status, resultMsg, task.id]);
                 connection.end();
             });
@@ -174,3 +174,4 @@ async function pollQueue() {
 
 pollQueue();
 console.log('[INFO] Host Worker (V9 Hardened) başlatıldı. Action Queue dinleniyor...');
+

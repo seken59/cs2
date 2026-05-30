@@ -2,28 +2,28 @@ const mysql = require('mysql2');
 const TelegramBot = require('node-telegram-bot-api');
 
 // MySQL Bağlantısı
-const DB_HOST = process.env.DB_HOST;
-const DB_USER = process.env.DB_USER;
-const DB_PASS = process.env.DB_PASS;
+const DATABASE_IP = process.env.DATABASE_IP;
+const DATABASE_USR = process.env.DATABASE_USR;
+const DATABASE_PWD = process.env.DATABASE_PWD;
 const DB_NAME = process.env.DB_NAME;
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const TG_BOT_TOKEN = process.env.TG_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-if (!DB_HOST || !DB_USER || !DB_PASS || !DB_NAME) {
+if (!DATABASE_IP || !DATABASE_USR || !DATABASE_PWD || !DB_NAME) {
     throw new Error("CRITICAL: Missing required DB environment variables");
 }
 
 const db = mysql.createPool({
-    host: DB_HOST,
-    user: DB_USER,
-    password: DB_PASS,
+    host: DATABASE_IP,
+    user: DATABASE_USR,
+    password: DATABASE_PWD,
     database: DB_NAME,
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
 });
 
-const botTelegram = TELEGRAM_TOKEN ? new TelegramBot(TELEGRAM_TOKEN, { polling: false }) : null;
+const botTelegram = TG_BOT_TOKEN ? new TelegramBot(TG_BOT_TOKEN, { polling: false }) : null;
 
 function sendTelegram(message) {
     if (botTelegram && CHAT_ID) {
@@ -73,7 +73,7 @@ db.getConnection((err, connection) => {
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         username VARCHAR(100) NOT NULL UNIQUE,
         password_hash VARCHAR(255) NOT NULL,
-        totp_secret VARCHAR(255) NOT NULL,
+        MFA_SECRET VARCHAR(255) NOT NULL,
         is_active TINYINT(1) NOT NULL DEFAULT 1,
         created_at DATETIME NOT NULL,
         updated_at DATETIME NULL
@@ -304,3 +304,4 @@ setInterval(triggerBatch, 60000 * 5); // 5 dakikada bir kontrol et
 
 sendTelegram('Master Node (V6) başlatıldı. Batch işlemleri dinleniyor.');
 console.log('[INFO] Master Orkestratör (V6) başlatıldı.');
+
