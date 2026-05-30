@@ -9,6 +9,7 @@ const DB_PASS = process.env.DB_PASS || 'zz12JkE3O@10gFr1';
 const DB_NAME = process.env.DB_NAME || 'cs_bot';
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || '';
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
+const WORKER_ID = 'host_worker_' + Math.floor(Math.random()*10000);
 
 const botTelegram = TELEGRAM_TOKEN ? new TelegramBot(TELEGRAM_TOKEN, { polling: false }) : null;
 
@@ -61,9 +62,16 @@ async function processQueue() {
             sendTelegram(`[ALARM] Action Queue Sıkıştı! ${staleTasks.length} adet işlem 5 dakikadan uzun süredir PENDING durumunda.`);
         }
 
-        // PENDING durumundaki görevleri al (FOR UPDATE kullanarak kilitliyoruz)
+        // PENDING durumundaki görevleri al (FOR UPDATE SKIP LOCKED kullanarak kilitliyoruz)
         await db.query('START TRANSACTION');
-        const [rows] = await db.query(`SELECT * FROM action_queue WHERE status = 'PENDING' ORDER BY created_at ASC LIMIT 1 FOR UPDATE`);
+        const [rows] = await db.query(`
+            SELECT * FROM action_queue 
+            WHERE status = 'PENDING' 
+            AND (locked_until IS NULL OR locked_until < NOW())
+            ORDER BY created_at ASC 
+            LIMIT 1 
+            FOR UPDATE SKIP LOCKED
+        `);
         
         if (rows.length === 0) {
             await db.query('ROLLBACK');
@@ -73,8 +81,15 @@ async function processQueue() {
 
         const task = rows[0];
         
-        // İşleniyor olarak işaretle
-        await db.query(`UPDATE action_queue SET status = 'PROCESSING' WHERE id = ?`, [task.id]);
+        // Timeout & Retry kontrolü
+        if (task.retry_count >= task.max_retry) {
+            await db.query(`UPDATE action_queue SET status = 'FAILED', result = 'Max retry exceeded' WHERE id = ?`, [task.id]);
+            await db.query('COMMIT');
+            return;
+        }
+
+        // İşleniyor olarak işaretle ve kilit süresi koy
+        await db.query(`UPDATE action_queue SET status = 'PROCESSING', worker_id = ?, locked_until = DATE_ADD(NOW(), INTERVAL ? SECOND) WHERE id = ?`, [WORKER_ID, task.timeout_seconds, task.id]);
         await db.query('COMMIT');
 
         console.log(`[WORKER] İşlem yürütülüyor: ${task.action_type} (ID: ${task.id})`);
@@ -98,7 +113,11 @@ async function processQueue() {
                 const resultMsg = `Container ${cName} stopped with code ${code}`;
                 const status = code === 0 ? 'COMPLETED' : 'FAILED';
                 const connection = await mysql.createConnection({ host: DB_HOST, user: DB_USER, password: DB_PASS, database: DB_NAME });
-                await connection.query(`UPDATE action_queue SET status = ?, completed_at = NOW(), result = ? WHERE id = ?`, [status, resultMsg, task.id]);
+                if (status === 'FAILED' && task.retry_count < task.max_retry - 1) {
+                    await connection.query(`UPDATE action_queue SET status = 'PENDING', retry_count = retry_count + 1, locked_until = NULL WHERE id = ?`, [task.id]);
+                } else {
+                    await connection.query(`UPDATE action_queue SET status = ?, completed_at = NOW(), result = ? WHERE id = ?`, [status, resultMsg, task.id]);
+                }
                 connection.end();
             });
             return; // Spawn asenkron olduğu için buradan dönüyoruz, DB update event içinde.

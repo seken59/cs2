@@ -1,11 +1,14 @@
 #!/bin/bash
-# KO-LMS V8 Restore Dry-Run Testi
-# Haftada bir cron ile çalıştırılmalıdır. (0 4 * * 0 /home/cs.serkaneken.com/public_html/restore_test.sh)
+# KO-LMS V9 Restore Dry-Run Testi
+# Gerçek bir veritabanına import yaparak şema ve data bütünlüğünü test eder.
 
 BACKUP_DIR="/home/cs.serkaneken.com/backups"
 ARCHIVE_PASS="KO_LMS_BACKUP_SECURE_2026!"
+DB_USER="cs_admin"
+DB_PASS="zz12JkE3O@10gFr1"
+TEST_DB="cs_bot_test"
 
-LATEST_BACKUP=$(ls -t "$BACKUP_DIR"/KOLMS_DB_*.enc 2>/dev/null | head -n 1)
+LATEST_BACKUP=$(ls -t "$BACKUP_DIR"/KOLMS_DB_*.gpg 2>/dev/null | head -n 1)
 
 if [ -z "$LATEST_BACKUP" ]; then
     echo "[HATA] Test edilecek backup bulunamadi."
@@ -14,14 +17,26 @@ fi
 
 echo "[INFO] Restore testi basliyor: $LATEST_BACKUP"
 
-# Dry-run: Sadece şifreyi çözebiliyor mu ve dosya bütünlüğü sağlam mı test edilir.
-# Gerçek bir veritabanına yazılmaz.
-if openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -d -k "$ARCHIVE_PASS" -in "$LATEST_BACKUP" | tar -tzf - > /dev/null 2>&1; then
-    echo "[SUCCESS] Restore Testi Basarili. Backup saglam ve decrypte edilebiliyor."
-    # Gerçek sistemde burada mysql test db import testi yapılabilir.
-    exit 0
+# 1. Test veritabanını oluştur
+mysql -u "$DB_USER" -p"$DB_PASS" -e "DROP DATABASE IF EXISTS $TEST_DB; CREATE DATABASE $TEST_DB;"
+
+# 2. Şifreyi çöz ve import et
+if gpg --decrypt --batch --passphrase "$ARCHIVE_PASS" "$LATEST_BACKUP" | tar -xzO | mysql -u "$DB_USER" -p"$DB_PASS" "$TEST_DB"; then
+    echo "[SUCCESS] Veritabani basariyla import edildi."
+    
+    # 3. Şema ve Row count kontrolü
+    TABLE_COUNT=$(mysql -u "$DB_USER" -p"$DB_PASS" -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$TEST_DB';" -s -N)
+    if [ "$TABLE_COUNT" -gt 0 ]; then
+        echo "[SUCCESS] Restore Testi %100 Basarili. $TABLE_COUNT tablo dogrulandi."
+        mysql -u "$DB_USER" -p"$DB_PASS" -e "INSERT INTO cs_bot.backup_runs (backup_file, backup_type, status, started_at, finished_at) VALUES ('$LATEST_BACKUP', 'DB', 'RESTORE_TESTED', NOW(), NOW());"
+    else
+        echo "[CRITICAL] Veritabani import edildi ama tablolar bos!"
+        mysql -u "$DB_USER" -p"$DB_PASS" -e "INSERT INTO cs_bot.backup_runs (backup_file, backup_type, status, started_at, finished_at, error_message) VALUES ('$LATEST_BACKUP', 'DB', 'FAILED', NOW(), NOW(), 'Tablolar bos');"
+    fi
 else
-    echo "[CRITICAL] Restore Testi BASARISIZ! Backup bozuk veya parola yanlis."
-    # Burada Telegram'a HTTP POST ile uyarı gönderilir
-    exit 1
+    echo "[CRITICAL] Restore Testi BASARISIZ! Backup bozuk, import edilemedi."
+    mysql -u "$DB_USER" -p"$DB_PASS" -e "INSERT INTO cs_bot.backup_runs (backup_file, backup_type, status, started_at, finished_at, error_message) VALUES ('$LATEST_BACKUP', 'DB', 'FAILED', NOW(), NOW(), 'Import failed');"
 fi
+
+# 4. Temizlik
+mysql -u "$DB_USER" -p"$DB_PASS" -e "DROP DATABASE IF EXISTS $TEST_DB;"

@@ -73,9 +73,15 @@ db.getConnection((err, connection) => {
 
     connection.query(`CREATE TABLE IF NOT EXISTS action_queue (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        idempotency_key VARCHAR(128) UNIQUE NULL,
         action_type VARCHAR(64) NOT NULL,
         payload JSON NOT NULL,
         status ENUM('PENDING','PROCESSING','COMPLETED','FAILED') DEFAULT 'PENDING',
+        worker_id VARCHAR(100) NULL,
+        retry_count INT DEFAULT 0,
+        max_retry INT DEFAULT 3,
+        timeout_seconds INT DEFAULT 300,
+        locked_until DATETIME NULL,
         created_at DATETIME NOT NULL,
         completed_at DATETIME NULL,
         result TEXT NULL
@@ -112,6 +118,18 @@ db.getConnection((err, connection) => {
         last_error TEXT NULL
     )`);
 
+    connection.query(`CREATE TABLE IF NOT EXISTS backup_runs (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        backup_file VARCHAR(255) NOT NULL,
+        backup_type ENUM('DB','KEY','FULL') NOT NULL,
+        status ENUM('STARTED','COMPLETED','FAILED','RESTORE_TESTED') NOT NULL,
+        size_bytes BIGINT NULL,
+        checksum_sha256 VARCHAR(128) NULL,
+        started_at DATETIME NOT NULL,
+        finished_at DATETIME NULL,
+        error_message TEXT NULL
+    )`);
+
     connection.query(`CREATE TABLE IF NOT EXISTS system_settings (
         setting_key VARCHAR(50) PRIMARY KEY,
         setting_value VARCHAR(255)
@@ -134,8 +152,9 @@ async function triggerBatch() {
         await promiseDb.query(`INSERT INTO worker_heartbeats (worker_name, worker_type, heartbeat_at) VALUES ('main_index', 'ORCHESTRATOR', NOW()) ON DUPLICATE KEY UPDATE heartbeat_at=NOW(), status='OK'`);
 
         const [settings] = await promiseDb.query(`SELECT setting_value FROM system_settings WHERE setting_key = 'maintenance_mode'`);
-        if (settings.length > 0 && settings[0].setting_value !== 'COMPLETED' && settings[0].setting_value !== '0') {
-            console.log(`[WARNING] Sistem BAKIM MODUNDA (${settings[0].setting_value}). Yeni batch başlatılamaz.`);
+        const maintenanceState = settings.length > 0 ? settings[0].setting_value : 'COMPLETED';
+        if (maintenanceState !== 'COMPLETED' && maintenanceState !== 'FAILED' && maintenanceState !== 'CANCELLED') {
+            console.log(`[WARNING] Sistem BAKIM MODUNDA (Durum: ${maintenanceState}). Yeni batch başlatılamaz.`);
             return;
         }
 
@@ -236,6 +255,12 @@ async function stagedRecovery() {
                 
                 console.log(`[RECOVERY] Batch ${bId} Bütünlüğü bozulduğu için ABORTED yapıldı. Tüm botlara STOP emri verildi.`);
             }
+        }
+
+        // ABORTING Alert (10 dakikadan uzun süren abort işlemi varsa)
+        const [abortingBatches] = await promiseDb.query(`SELECT batch_id FROM farm_batches WHERE status = 'ABORTING' AND created_at < DATE_SUB(NOW(), INTERVAL 10 MINUTE)`);
+        for (const b of abortingBatches) {
+            await promiseDb.query(`INSERT INTO system_alerts (severity, alert_type, message, related_entity_type, related_entity_id, created_at) VALUES ('CRITICAL', 'BATCH_ABORT_TIMEOUT', 'Batch ABORTING statüsünde 10 dakikadan uzun süredir bekliyor!', 'BATCH', ?, NOW())`, [b.batch_id]);
         }
 
         // Batch Status Update (Eğer içindeki tüm hesaplar bittiyse ve durumu RUNNING/ABORTING ise FINISHED/FAILED yap)
