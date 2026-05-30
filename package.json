@@ -1,0 +1,19 @@
+{
+  "name": "kocs2-farm",
+  "version": "3.0.0",
+  "description": "Autonomous CS2 Headless Farm Architecture",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "bot": "node bot/csgo.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.8",
+    "dotenv": "^16.4.5",
+    "node-globaloffensive": "^2.4.1",
+    "node-telegram-bot-api": "^0.65.0",
+    "mysql2": "^3.9.7",
+    "steam-totp": "^2.1.2",
+    "steam-user": "^5.0.5"
+  }
+}

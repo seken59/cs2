@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  bot1:
+    build: .
+    container_name: cs2_bot_1
+    volumes:
+      - /home/cs.serkaneken.com/cs2_merged/bot1:/home/steamuser/cs2_merged
+    environment:
+      - BOT_ID=1
+      - ACCOUNT_USER=${USER_1}
+      - ACCOUNT_PASS=${PASS_1}
+      - ACCOUNT_SHARED_SECRET=${SECRET_1}
+      - SOCKS5_PROXY=${PROXY_1}
+      - LOBBY_ID=LOBBY_A
+    restart: unless-stopped
+    shm_size: '2gb'
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "node"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  bot2:
+    build: .
+    container_name: cs2_bot_2
+    volumes:
+      - /home/cs.serkaneken.com/cs2_merged/bot2:/home/steamuser/cs2_merged
+    environment:
+      - BOT_ID=2
+      - ACCOUNT_USER=${USER_2}
+      - ACCOUNT_PASS=${PASS_2}
+      - ACCOUNT_SHARED_SECRET=${SECRET_2}
+      - SOCKS5_PROXY=${PROXY_2}
+      - LOBBY_ID=LOBBY_A
+    restart: unless-stopped
+    shm_size: '2gb'
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "node"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  bot3:
+    build: .
+    container_name: cs2_bot_3
+    volumes:
+      - /home/cs.serkaneken.com/cs2_merged/bot3:/home/steamuser/cs2_merged
+    environment:
+      - BOT_ID=3
+      - ACCOUNT_USER=${USER_3}
+      - ACCOUNT_PASS=${PASS_3}
+      - ACCOUNT_SHARED_SECRET=${SECRET_3}
+      - SOCKS5_PROXY=${PROXY_3}
+      - LOBBY_ID=LOBBY_B
+    restart: unless-stopped
+    shm_size: '2gb'
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "node"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  bot4:
+    build: .
+    container_name: cs2_bot_4
+    volumes:
+      - /home/cs.serkaneken.com/cs2_merged/bot4:/home/steamuser/cs2_merged
+    environment:
+      - BOT_ID=4
+      - ACCOUNT_USER=${USER_4}
+      - ACCOUNT_PASS=${PASS_4}
+      - ACCOUNT_SHARED_SECRET=${SECRET_4}
+      - SOCKS5_PROXY=${PROXY_4}
+      - LOBBY_ID=LOBBY_B
+    restart: unless-stopped
+    shm_size: '2gb'
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "node"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
