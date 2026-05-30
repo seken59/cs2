@@ -1,14 +1,22 @@
 const crypto = require('crypto');
 
-// Master Key for AES-256-GCM. 32-bytes required.
-// Çevresel değişkenden alınmalı, yoksa varsayılan (TEHLİKELİ) kullanılır.
-const MASTER_KEY = process.env.ENCRYPTION_KEY || 'KOLmsSuperSecretEncryptionKey123';
+const rawKey = process.env.MASTER_KEY;
+
+if (!rawKey) {
+    throw new Error("CRITICAL: MASTER_KEY environment variable is required.");
+}
+
+const MASTER_KEY = Buffer.from(rawKey, 'base64');
+if (MASTER_KEY.length !== 32) {
+    throw new Error("CRITICAL: MASTER_KEY must be exactly 32 bytes base64 encoded.");
+}
+
 const ALGORITHM = 'aes-256-gcm';
 
 function encrypt(text) {
     if (!text) return text;
-    const iv = crypto.randomBytes(12); // GCM için 12 byte önerilir
-    const cipher = crypto.createCipheriv(ALGORITHM, Buffer.from(MASTER_KEY.padEnd(32, '0').slice(0, 32)), iv);
+    const iv = crypto.randomBytes(12); // GCM için 12 byte zorunlu standart
+    const cipher = crypto.createCipheriv(ALGORITHM, MASTER_KEY, iv);
     let encrypted = cipher.update(text, 'utf8', 'hex');
     encrypted += cipher.final('hex');
     const authTag = cipher.getAuthTag().toString('hex');
@@ -24,7 +32,7 @@ function decrypt(text) {
         const encryptedText = textParts[1];
         const authTag = Buffer.from(textParts[2], 'hex');
         
-        const decipher = crypto.createDecipheriv(ALGORITHM, Buffer.from(MASTER_KEY.padEnd(32, '0').slice(0, 32)), iv);
+        const decipher = crypto.createDecipheriv(ALGORITHM, MASTER_KEY, iv);
         decipher.setAuthTag(authTag);
         let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
         decrypted += decipher.final('utf8');

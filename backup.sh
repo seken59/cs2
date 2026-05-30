@@ -1,16 +1,24 @@
 #!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
 # KO-LMS V9 Otonom Yedekleme Scripti
 # GPG (AES-256) simetrik şifreleme kullanılarak yedek alınır.
 
 BACKUP_DIR="/home/cs.serkaneken.com/backups"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-DB_USER="cs_admin"
-DB_PASS="zz12JkE3O@10gFr1"
+DB_USER="${DB_USER:?Missing DB_USER}"
+DB_PASS="${DB_PASS:?Missing DB_PASS}"
 DB_NAME="cs_bot"
 ENV_PATH="/home/cs.serkaneken.com/farm_db/.env"
-ARCHIVE_PASS="KO_LMS_BACKUP_SECURE_2026!" # Parola ortam değişkeninden alınmalıdır.
+ARCHIVE_PASS="${ARCHIVE_PASS:?Missing ARCHIVE_PASS}"
 
 mkdir -p "$BACKUP_DIR"
+
+# Hata durumunda plain sql dosyasını temizlemek için trap ekleyelim
+cleanup() {
+    rm -f "${BACKUP_DIR}/db_${TIMESTAMP}.sql"
+}
+trap cleanup EXIT
 
 # 1. MySQL Dump
 echo "[INFO] MySQL Dump aliniyor..."

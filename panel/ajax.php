@@ -9,16 +9,12 @@ if (!isset($_SESSION['kolms_admin_logged_in']) || $_SESSION['kolms_admin_logged_
     exit;
 }
 
-$dbHost = 'localhost';
-$dbUser = 'cs_admin';
-$dbPass = 'zz12JkE3O@10gFr1';
-$dbName = 'cs_bot';
+require_once 'config.php';
 
-try {
-    $db = new PDO("mysql:host=$dbHost;dbname=$dbName;charset=utf8", $dbUser, $dbPass);
-    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-} catch (Exception $e) {
-    echo json_encode(['success' => false, 'message' => 'Veritabanı hatası.']);
+$token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? $_POST['csrf_token'] ?? '';
+if (empty($token) || empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $token)) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Invalid CSRF token']);
     exit;
 }
 

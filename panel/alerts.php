@@ -1,18 +1,35 @@
 <?php
 session_start();
-if (!isset($_SESSION['admin_logged_in'])) {
+if (!isset($_SESSION['kolms_admin_logged_in']) || $_SESSION['kolms_admin_logged_in'] !== true) {
     header("Location: login.php");
     exit;
 }
-$db = new PDO("mysql:host=localhost;dbname=cs_bot", "cs_admin", "zz12JkE3O@10gFr1");
 
-if (isset($_POST['action']) && isset($_POST['id'])) {
-    $id = (int)$_POST['id'];
-    $newStatus = $_POST['action'] === 'ack' ? 'ACKED' : 'RESOLVED';
-    $timeCol = $_POST['action'] === 'ack' ? 'acknowledged_at' : 'resolved_at';
-    $db->prepare("UPDATE system_alerts SET status = ?, $timeCol = NOW() WHERE id = ?")->execute([$newStatus, $id]);
-    header("Location: alerts.php");
-    exit;
+require_once 'config.php';
+
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    $csrf_token = $_POST['csrf_token'] ?? '';
+    if (!isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csrf_token)) {
+        die("Invalid CSRF token.");
+    }
+
+    if (isset($_POST['action']) && isset($_POST['id'])) {
+        $id = (int)$_POST['id'];
+        $newStatus = $_POST['action'] === 'ack' ? 'ACKED' : 'RESOLVED';
+        $timeCol = $_POST['action'] === 'ack' ? 'acknowledged_at' : 'resolved_at';
+        $db->prepare("UPDATE system_alerts SET status = ?, $timeCol = NOW() WHERE id = ?")->execute([$newStatus, $id]);
+        
+        // Audit log kaydı
+        $admin_user = 'admin'; // Session'dan çekilebilir
+        $ip = $_SERVER['REMOTE_ADDR'];
+        try {
+            $db->prepare("INSERT INTO admin_audit_log (admin_user, ip_address, action, target_type, target_id, created_at) VALUES (?, ?, ?, 'ALERT', ?, NOW())")
+               ->execute([$admin_user, $ip, "alert_" . $_POST['action'], $id]);
+        } catch(Exception $e){}
+
+        header("Location: alerts.php");
+        exit;
+    }
 }
 
 $stmt = $db->query("SELECT * FROM system_alerts ORDER BY created_at DESC LIMIT 50");
@@ -42,10 +59,18 @@ $alerts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 <td><?= $a['created_at'] ?></td>
                 <td>
                     <?php if($a['status'] === 'OPEN'): ?>
-                    <form method="post" class="d-inline"><input type="hidden" name="id" value="<?= $a['id'] ?>"><button name="action" value="ack" class="btn btn-sm btn-primary">ACK</button></form>
+                    <form method="post" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
+                        <input type="hidden" name="id" value="<?= $a['id'] ?>">
+                        <button name="action" value="ack" class="btn btn-sm btn-primary">ACK</button>
+                    </form>
                     <?php endif; ?>
                     <?php if($a['status'] !== 'RESOLVED'): ?>
-                    <form method="post" class="d-inline"><input type="hidden" name="id" value="<?= $a['id'] ?>"><button name="action" value="resolve" class="btn btn-sm btn-success">RESOLVE</button></form>
+                    <form method="post" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
+                        <input type="hidden" name="id" value="<?= $a['id'] ?>">
+                        <button name="action" value="resolve" class="btn btn-sm btn-success">RESOLVE</button>
+                    </form>
                     <?php endif; ?>
                 </td>
             </tr>

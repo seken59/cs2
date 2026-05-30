@@ -34,9 +34,14 @@ for i in {1..4}; do
     # OverlayFS Mount (Host seviyesinde)
     mount -t overlay overlay -o lowerdir="$MASTER_DIR",upperdir="$WRITE_DIR",workdir="$WORK_DIR" "$MERGED_DIR"
     
-    # İzinleri Docker'ın steamuser'ı (UID 1000) erişebilecek şekilde ayarla (veya chmod 777 geçici çözüm)
-    chmod -R 777 "$WRITE_DIR"
-    chmod -R 777 "$MERGED_DIR"
+    # İzinleri Docker'ın steamuser'ı (Örn: UID 1000) erişebilecek şekilde ayarla
+    chown -R 1000:1000 "$WRITE_DIR"
+    chown -R 1000:1000 "$WORK_DIR"
+    chown -R 1000:1000 "$MERGED_DIR"
+    
+    chmod -R 750 "$WRITE_DIR"
+    chmod -R 750 "$WORK_DIR"
+    chmod -R 750 "$MERGED_DIR"
 
     echo "[OK] Bot-$i OverlayFS Mount Başarılı: $MERGED_DIR"
 done

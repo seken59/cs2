@@ -1,11 +1,13 @@
 #!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
 # KO-LMS V9 Restore Dry-Run Testi
 # Gerçek bir veritabanına import yaparak şema ve data bütünlüğünü test eder.
 
 BACKUP_DIR="/home/cs.serkaneken.com/backups"
-ARCHIVE_PASS="KO_LMS_BACKUP_SECURE_2026!"
-DB_USER="cs_admin"
-DB_PASS="zz12JkE3O@10gFr1"
+ARCHIVE_PASS="${ARCHIVE_PASS:?Missing ARCHIVE_PASS}"
+DB_USER="${DB_USER:?Missing DB_USER}"
+DB_PASS="${DB_PASS:?Missing DB_PASS}"
 TEST_DB="cs_bot_test"
 
 LATEST_BACKUP=$(ls -t "$BACKUP_DIR"/KOLMS_DB_*.gpg 2>/dev/null | head -n 1)

@@ -3,12 +3,17 @@ const { spawn } = require('child_process');
 const TelegramBot = require('node-telegram-bot-api');
 
 // MySQL Bağlantısı
-const DB_HOST = process.env.DB_HOST || 'localhost';
-const DB_USER = process.env.DB_USER || 'cs_admin';
-const DB_PASS = process.env.DB_PASS || 'zz12JkE3O@10gFr1';
-const DB_NAME = process.env.DB_NAME || 'cs_bot';
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || '';
-const CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
+const DB_HOST = process.env.DB_HOST;
+const DB_USER = process.env.DB_USER;
+const DB_PASS = process.env.DB_PASS;
+const DB_NAME = process.env.DB_NAME;
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
+if (!DB_HOST || !DB_USER || !DB_PASS || !DB_NAME) {
+    throw new Error("CRITICAL: Missing required DB environment variables in worker.");
+}
+
 const WORKER_ID = 'host_worker_' + Math.floor(Math.random()*10000);
 
 const botTelegram = TELEGRAM_TOKEN ? new TelegramBot(TELEGRAM_TOKEN, { polling: false }) : null;
@@ -63,34 +68,38 @@ async function processQueue() {
         }
 
         // PENDING durumundaki görevleri al (FOR UPDATE SKIP LOCKED kullanarak kilitliyoruz)
-        await db.query('START TRANSACTION');
-        const [rows] = await db.query(`
-            SELECT * FROM action_queue 
-            WHERE status = 'PENDING' 
-            AND (locked_until IS NULL OR locked_until < NOW())
-            ORDER BY created_at ASC 
-            LIMIT 1 
-            FOR UPDATE SKIP LOCKED
-        `);
-        
-        if (rows.length === 0) {
-            await db.query('ROLLBACK');
-            await db.end();
-            return;
-        }
+        const conn = await db.promise().getConnection();
+        try {
+            await conn.beginTransaction();
+            const [rows] = await conn.query(`
+                SELECT * FROM action_queue 
+                WHERE status = 'PENDING' 
+                AND (locked_until IS NULL OR locked_until < NOW())
+                ORDER BY created_at ASC 
+                LIMIT 1 
+                FOR UPDATE SKIP LOCKED
+            `);
+            
+            if (rows.length === 0) {
+                await conn.rollback();
+                conn.release();
+                return;
+            }
 
-        const task = rows[0];
-        
-        // Timeout & Retry kontrolü
-        if (task.retry_count >= task.max_retry) {
-            await db.query(`UPDATE action_queue SET status = 'FAILED', result = 'Max retry exceeded' WHERE id = ?`, [task.id]);
-            await db.query('COMMIT');
-            return;
-        }
+            const task = rows[0];
+            
+            // Timeout & Retry kontrolü
+            if (task.retry_count >= task.max_retry) {
+                await conn.query(`UPDATE action_queue SET status = 'FAILED', result = 'Max retry exceeded' WHERE id = ?`, [task.id]);
+                await conn.commit();
+                conn.release();
+                return;
+            }
 
-        // İşleniyor olarak işaretle ve kilit süresi koy
-        await db.query(`UPDATE action_queue SET status = 'PROCESSING', worker_id = ?, locked_until = DATE_ADD(NOW(), INTERVAL ? SECOND) WHERE id = ?`, [WORKER_ID, task.timeout_seconds, task.id]);
-        await db.query('COMMIT');
+            // İşleniyor olarak işaretle ve kilit süresi koy
+            await conn.query(`UPDATE action_queue SET status = 'PROCESSING', worker_id = ?, locked_until = DATE_ADD(NOW(), INTERVAL ? SECOND) WHERE id = ?`, [WORKER_ID, task.timeout_seconds, task.id]);
+            await conn.commit();
+            conn.release();
 
         console.log(`[WORKER] İşlem yürütülüyor: ${task.action_type} (ID: ${task.id})`);
         
@@ -131,19 +140,37 @@ async function processQueue() {
                 await connection.query(`UPDATE action_queue SET status = ?, completed_at = NOW(), result = ? WHERE id = ?`, [status, resultMsg, task.id]);
                 connection.end();
             });
+            db.end();
             return;
         } else {
             await db.query(`UPDATE action_queue SET status = 'FAILED', completed_at = NOW(), result = ? WHERE id = ?`, ["Bilinmeyen işlem tipi", task.id]);
+            db.end();
         }
 
+        } catch (dbErr) {
+            if (conn) conn.release();
+            console.error('[WORKER DB ERROR]', dbErr.message);
+            db.end();
+        }
     } catch (e) {
-        if(db) await db.query('ROLLBACK').catch(()=>{});
-        console.error('[WORKER] Veritabanı Hatası:', e.message);
-    } finally {
-        if(db) await db.end().catch(()=>{});
+        console.error('[HATA] Action Queue islenemedi:', e.message);
     }
 }
 
-// Worker'ı 5 saniyede bir çalıştır
-setInterval(processQueue, 5000);
-console.log('[INFO] Host Worker (V7 Hardened) başlatıldı. Action Queue dinleniyor...');
+// Single-flight poll recursive loop to prevent overlap
+let isProcessing = false;
+async function pollQueue() {
+    if (isProcessing) return;
+    isProcessing = true;
+    try {
+        await processQueue();
+    } catch (e) {
+        console.error(e);
+    } finally {
+        isProcessing = false;
+        setTimeout(pollQueue, 5000);
+    }
+}
+
+pollQueue();
+console.log('[INFO] Host Worker (V9 Hardened) başlatıldı. Action Queue dinleniyor...');

@@ -1,7 +1,7 @@
 const SteamUser = require('steam-user');
 const GlobalOffensive = require('node-globaloffensive');
 const SteamTotp = require('steam-totp');
-const { execSync, spawn } = require('child_process');
+const { exec, execSync, spawn } = require('child_process');
 const axios = require('axios');
 const fs = require('fs');
 const mysql = require('mysql2/promise');
@@ -99,12 +99,17 @@ async function startPhysicalGame() {
     }
 }
 
-const DB_HOST = process.env.DB_HOST || 'localhost';
-const DB_USER = process.env.DB_USER || 'cs_admin';
-const DB_PASS = process.env.DB_PASS || 'zz12JkE3O@10gFr1';
-const DB_NAME = process.env.DB_NAME || 'cs_bot';
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || '';
-const CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
+const DB_HOST = process.env.DB_HOST;
+const DB_USER = process.env.DB_USER;
+const DB_PASS = process.env.DB_PASS;
+const DB_NAME = process.env.DB_NAME;
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
+if (!DB_HOST || !DB_USER || !DB_PASS || !DB_NAME) {
+    console.error(`[BOT-${account.botId}] CRITICAL ERROR: DB environment variables missing.`);
+    process.exit(1);
+}
 
 const botTelegram = TELEGRAM_TOKEN ? new TelegramBot(TELEGRAM_TOKEN, { polling: false }) : null;
 

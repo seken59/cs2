@@ -2,16 +2,24 @@ const fs = require('fs');
 const path = require('path');
 const mysql = require('mysql2/promise');
 
-const DB_HOST = process.env.DB_HOST || 'localhost';
-const DB_USER = process.env.DB_USER || 'cs_admin';
-const DB_PASS = process.env.DB_PASS || 'zz12JkE3O@10gFr1';
-const DB_NAME = process.env.DB_NAME || 'cs_bot';
+const DB_HOST = process.env.DB_HOST;
+const DB_USER = process.env.DB_USER;
+const DB_PASS = process.env.DB_PASS;
+const DB_NAME = process.env.DB_NAME;
+
+if (!DB_HOST || !DB_USER || !DB_PASS || !DB_NAME) {
+    console.error("CRITICAL ERROR: DB environment variables missing.");
+    process.exit(1);
+}
 
 const MAFILES_DIR = path.join(__dirname, 'maFiles');
 
 if (!fs.existsSync(MAFILES_DIR)) {
     fs.mkdirSync(MAFILES_DIR);
     console.log(`[INFO] '${MAFILES_DIR}' dizini oluşturuldu. Lütfen SDA (.maFile) dosyalarınızı buraya atın ve scripti tekrar çalıştırın.`);
+    process.exit(0);
+}
+
 async function importAccounts() {
     if (!fs.existsSync(MAFILES_DIR)) {
         console.error(`[HATA] ${MAFILES_DIR} klasörü bulunamadı!`);

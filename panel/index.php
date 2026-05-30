@@ -7,14 +7,10 @@ if (!isset($_SESSION['kolms_admin_logged_in']) || $_SESSION['kolms_admin_logged_
     exit;
 }
 
-// Güvenlik için basit bir şifreleme konulabilir, şimdilik direkt açıyoruz.
-$dbHost = 'localhost';
-$dbUser = 'cs_admin';
-$dbPass = 'zz12JkE3O@10gFr1';
-$dbName = 'cs_bot';
+require_once 'config.php';
 
 try {
-    $db = new PDO("mysql:host=$dbHost;dbname=$dbName;charset=utf8", $dbUser, $dbPass);
+    // $db config.php'den geliyor. Sadece tabloyu oluşturuyoruz:
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     // Tabloyu oluştur (Eğer orchestrator henüz çalışmadıysa)
     $db->exec("CREATE TABLE IF NOT EXISTS accounts (
@@ -50,6 +46,7 @@ $accounts = $db->query("SELECT * FROM accounts ORDER BY id DESC")->fetchAll(PDO:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
     <title>KO-LMS | CS2 Farm Orchestrator</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -232,13 +229,16 @@ $accounts = $db->query("SELECT * FROM accounts ORDER BY id DESC")->fetchAll(PDO:
             const password = document.getElementById('password').value;
             const shared_secret = document.getElementById('shared_secret').value;
             
+            const csrf_token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+            
             const formData = new FormData();
             formData.append('action', 'add');
             formData.append('username', username);
             formData.append('password', password);
             formData.append('shared_secret', shared_secret);
+            formData.append('csrf_token', csrf_token);
 
-            const res = await fetch('ajax.php', { method: 'POST', body: formData });
+            const res = await fetch('ajax.php', { method: 'POST', body: formData, headers: {'X-CSRF-TOKEN': csrf_token} });
             const data = await res.json();
             
             if(data.success) {
@@ -251,11 +251,13 @@ $accounts = $db->query("SELECT * FROM accounts ORDER BY id DESC")->fetchAll(PDO:
         async function deleteAccount(id) {
             if(!confirm('Bu hesabı silmek istediğinize emin misiniz?')) return;
             
+            const csrf_token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
             const formData = new FormData();
             formData.append('action', 'delete');
             formData.append('id', id);
+            formData.append('csrf_token', csrf_token);
 
-            const res = await fetch('ajax.php', { method: 'POST', body: formData });
+            const res = await fetch('ajax.php', { method: 'POST', body: formData, headers: {'X-CSRF-TOKEN': csrf_token} });
             const data = await res.json();
             
             if(data.success) {

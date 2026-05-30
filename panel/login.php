@@ -6,18 +6,17 @@ ini_set('session.cookie_samesite', 'Strict');
 session_start();
 require_once 'GoogleAuthenticator.php';
 
-// Güvenlik Ayarları
-$ADMIN_USER = "boss";
-$ADMIN_PASS = "KOLMS_2026_Secure!"; // Burayı değiştirin
-
-// Sabit TOTP Secret (Gerçek sistemde her adminin kendi secret'ı db'de tutulur)
-$TOTP_SECRET = "OFAY2OIK2UFA653G"; // Authenticator uygulamasına manuel olarak "OFAY 2OIK 2UFA 653G" şeklinde ekleyebilirsiniz.
+$configPath = __DIR__ . '/config.php';
+if (!file_exists($configPath)) {
+    die("Sistem konfigürasyon dosyası bulunamadı. Lütfen config.php'yi oluşturun.");
+}
+require_once $configPath;
 
 // IP Whitelist (DB'den çekilecek)
 $ENABLE_IP_CHECK = true;
 
 try {
-    $db = new PDO("mysql:host=localhost;dbname=cs_bot", "cs_admin", "zz12JkE3O@10gFr1");
+    // $db config.php icinden geliyor olmali
     $stmt = $db->query("SELECT setting_value FROM system_settings WHERE setting_key = 'allowed_ips'");
     $res = $stmt->fetch(PDO::FETCH_ASSOC);
     $ALLOWED_IPS = $res ? explode(',', $res['setting_value']) : ['127.0.0.1', '::1'];
@@ -56,28 +55,37 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $csrf_token = $_POST['csrf_token'] ?? '';
 
     // CSRF Check
-    if (!isset($_SESSION['csrf_token']) || $csrf_token !== $_SESSION['csrf_token']) {
+    if (!isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csrf_token)) {
         $db->prepare("INSERT INTO login_attempts (ip_address, success, failure_reason, created_at) VALUES (?, 0, 'CSRF Failed', NOW())")->execute([$ip]);
         $error = "Geçersiz istek (CSRF hatası).";
     } else {
-        // Google Authenticator Doğrulama
-        $ga = new GoogleAuthenticator();
-        $checkResult = $ga->verifyCode($TOTP_SECRET, $pin, 2);
+        $stmt = $db->prepare("SELECT * FROM admin_users WHERE username = ? AND is_active = 1 LIMIT 1");
+        $stmt->execute([$user]);
+        $adminInfo = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($user === $ADMIN_USER && $pass === $ADMIN_PASS && $checkResult) {
-            $_SESSION['kolms_admin_logged_in'] = true;
-            $_SESSION['login_time'] = time();
-            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+        if ($adminInfo && password_verify($pass, $adminInfo['password_hash'])) {
+            $ga = new GoogleAuthenticator();
+            $checkResult = $ga->verifyCode($adminInfo['totp_secret'], $pin, 2);
 
-            // Audit Log Kaydı
-            try {
-                $stmt = $db->prepare("INSERT INTO admin_audit_log (admin_user, ip_address, action, created_at) VALUES (?, ?, 'login_success', NOW())");
-                $stmt->execute([$user, $ip]);
-                $db->prepare("INSERT INTO login_attempts (ip_address, success, created_at) VALUES (?, 1, NOW())")->execute([$ip]);
-            } catch(Exception $e){}
+            if ($checkResult) {
+                session_regenerate_id(true);
+                $_SESSION['kolms_admin_logged_in'] = true;
+                $_SESSION['login_time'] = time();
+                $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 
-            header("Location: index.php");
-            exit;
+                // Audit Log Kaydı
+                try {
+                    $logStmt = $db->prepare("INSERT INTO admin_audit_log (admin_user, ip_address, action, created_at) VALUES (?, ?, 'login_success', NOW())");
+                    $logStmt->execute([$user, $ip]);
+                    $db->prepare("INSERT INTO login_attempts (ip_address, success, created_at) VALUES (?, 1, NOW())")->execute([$ip]);
+                } catch(Exception $e){}
+
+                header("Location: index.php");
+                exit;
+            } else {
+                $db->prepare("INSERT INTO login_attempts (ip_address, success, failure_reason, created_at) VALUES (?, 0, 'Invalid TOTP', NOW())")->execute([$ip]);
+                $error = "Hatalı Giriş veya Geçersiz Google Authenticator Kodu!";
+            }
         } else {
             $db->prepare("INSERT INTO login_attempts (ip_address, success, failure_reason, created_at) VALUES (?, 0, 'Invalid Credentials', NOW())")->execute([$ip]);
             $error = "Hatalı Giriş veya Geçersiz Google Authenticator Kodu!";
@@ -126,7 +134,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             <div class="mb-6">
                 <label class="block text-sm font-medium mb-1 text-gray-300">Google Authenticator (TOTP) Kodu</label>
                 <input type="text" name="pin" class="w-full bg-slate-800 border border-slate-700 rounded px-4 py-2 focus:outline-none focus:border-blue-500 text-white text-center tracking-widest text-lg" required autocomplete="off" maxlength="6" placeholder="000000">
-                <p class="text-xs text-gray-500 mt-2 text-center">Kurulum Kodu: <?php echo $TOTP_SECRET; ?></p>
             </div>
             <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded transition-colors shadow-lg shadow-blue-500/30">
                 Sisteme Giriş Yap

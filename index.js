@@ -2,12 +2,16 @@ const mysql = require('mysql2');
 const TelegramBot = require('node-telegram-bot-api');
 
 // MySQL Bağlantısı
-const DB_HOST = process.env.DB_HOST || 'localhost';
-const DB_USER = process.env.DB_USER || 'cs_admin';
-const DB_PASS = process.env.DB_PASS || 'zz12JkE3O@10gFr1';
-const DB_NAME = process.env.DB_NAME || 'cs_bot';
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || '';
-const CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
+const DB_HOST = process.env.DB_HOST;
+const DB_USER = process.env.DB_USER;
+const DB_PASS = process.env.DB_PASS;
+const DB_NAME = process.env.DB_NAME;
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
+if (!DB_HOST || !DB_USER || !DB_PASS || !DB_NAME) {
+    throw new Error("CRITICAL: Missing required DB environment variables");
+}
 
 const db = mysql.createPool({
     host: DB_HOST,
@@ -37,17 +41,20 @@ db.getConnection((err, connection) => {
     // Accounts tablosuna key_version ekle (hata verirse yoksay)
     connection.query(`ALTER TABLE accounts ADD COLUMN key_version VARCHAR(20) DEFAULT 'v1'`, () => {});
 
-    // V6 Tabloları
+    // V6/V9 Tabloları
     connection.query(`CREATE TABLE IF NOT EXISTS farm_batches (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         batch_id VARCHAR(64) NOT NULL UNIQUE,
-        status ENUM('CREATED','RUNNING','STOPPING','FINISHED','FAILED','RECOVERED') NOT NULL,
+        status ENUM('CREATED','RESERVED','RUNNING','STALE','ABORTING','STOPPING','FINISHED','FAILED','RECOVERED','CANCELLED','TIMEOUT') NOT NULL,
         created_at DATETIME NOT NULL,
         started_at DATETIME NULL,
         finished_at DATETIME NULL,
         last_heartbeat_at DATETIME NULL,
         error_message TEXT NULL
     )`);
+    
+    // Varolan tabloların enum güncellemeleri
+    connection.query(`ALTER TABLE farm_batches MODIFY status ENUM('CREATED','RESERVED','RUNNING','STALE','ABORTING','STOPPING','FINISHED','FAILED','RECOVERED','CANCELLED','TIMEOUT') NOT NULL`, () => {});
 
     connection.query(`CREATE TABLE IF NOT EXISTS farm_batch_accounts (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -55,9 +62,21 @@ db.getConnection((err, connection) => {
         account_id BIGINT NOT NULL,
         role VARCHAR(32) NOT NULL,
         container_name VARCHAR(128) NULL,
-        status ENUM('RESERVED','RUNNING','FINISHED','FAILED','RECOVERED') NOT NULL,
+        status ENUM('RESERVED','RUNNING','STALE','STOPPING','FINISHED','FAILED','RECOVERED','CANCELLED') NOT NULL,
         heartbeat_at DATETIME NULL,
         last_error TEXT NULL
+    )`);
+    
+    connection.query(`ALTER TABLE farm_batch_accounts MODIFY status ENUM('RESERVED','RUNNING','STALE','STOPPING','FINISHED','FAILED','RECOVERED','CANCELLED') NOT NULL`, () => {});
+
+    connection.query(`CREATE TABLE IF NOT EXISTS admin_users (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        username VARCHAR(100) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NOT NULL,
+        totp_secret VARCHAR(255) NOT NULL,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NULL
     )`);
 
     connection.query(`CREATE TABLE IF NOT EXISTS admin_audit_log (
@@ -145,22 +164,22 @@ db.getConnection((err, connection) => {
 // Master Döngü: Transaction ile Atomik Batch Başlatma
 async function triggerBatch() {
     console.log('[INFO] Yeni batch kontrol ediliyor...');
-    const promiseDb = db.promise();
+    const conn = await db.promise().getConnection();
     
     try {
         // Orchestrator Heartbeat
-        await promiseDb.query(`INSERT INTO worker_heartbeats (worker_name, worker_type, heartbeat_at) VALUES ('main_index', 'ORCHESTRATOR', NOW()) ON DUPLICATE KEY UPDATE heartbeat_at=NOW(), status='OK'`);
+        await conn.query(`INSERT INTO worker_heartbeats (worker_name, worker_type, heartbeat_at) VALUES ('main_index', 'ORCHESTRATOR', NOW()) ON DUPLICATE KEY UPDATE heartbeat_at=NOW(), status='OK'`);
 
-        const [settings] = await promiseDb.query(`SELECT setting_value FROM system_settings WHERE setting_key = 'maintenance_mode'`);
+        const [settings] = await conn.query(`SELECT setting_value FROM system_settings WHERE setting_key = 'maintenance_mode'`);
         const maintenanceState = settings.length > 0 ? settings[0].setting_value : 'COMPLETED';
         if (maintenanceState !== 'COMPLETED' && maintenanceState !== 'FAILED' && maintenanceState !== 'CANCELLED') {
             console.log(`[WARNING] Sistem BAKIM MODUNDA (Durum: ${maintenanceState}). Yeni batch başlatılamaz.`);
             return;
         }
 
-        await promiseDb.query('START TRANSACTION');
+        await conn.beginTransaction();
         
-        const [rows] = await promiseDb.query(`
+        const [rows] = await conn.query(`
             SELECT id, username FROM accounts 
             WHERE status = 'IDLE' AND (locked_until IS NULL OR locked_until < NOW())
             ORDER BY last_run_at ASC LIMIT 4 FOR UPDATE
@@ -171,7 +190,7 @@ async function triggerBatch() {
             const ids = rows.map(r => r.id);
             
             // 1. Accounts Tablosunu Güncelle
-            await promiseDb.query(`
+            await conn.query(`
                 UPDATE accounts 
                 SET status = 'RESERVED', locked_until = DATE_ADD(NOW(), INTERVAL 30 MINUTE), 
                     last_run_at = NOW(), batch_id = ?, heartbeat_at = NOW()
@@ -179,92 +198,91 @@ async function triggerBatch() {
             `, [batchId, ids]);
 
             // 2. Farm Batches Tablosuna Yaz
-            await promiseDb.query(`
+            await conn.query(`
                 INSERT INTO farm_batches (batch_id, status, created_at, started_at) 
                 VALUES (?, 'RUNNING', NOW(), NOW())
             `, [batchId]);
 
             // 3. Farm Batch Accounts Tablosuna Yaz
             for(let i=0; i<4; i++) {
-                await promiseDb.query(`
+                await conn.query(`
                     INSERT INTO farm_batch_accounts (batch_id, account_id, role, container_name, status, heartbeat_at)
                     VALUES (?, ?, ?, ?, 'RUNNING', NOW())
                 `, [batchId, rows[i].id, 'FARMER', `cs2_bot_${i+1}`]);
             }
             
-            await promiseDb.query('COMMIT');
+            await conn.commit();
             console.log(`[MASTER] 4 hesap Batch için rezerve edildi. BatchID: ${batchId}`);
             
             // TODO: Action Queue üzerinden docker start komutu eklenebilir.
         } else {
-            await promiseDb.query('ROLLBACK');
+            await conn.rollback();
             console.log('[INFO] Yeterli IDLE hesap bulunamadı.');
         }
     } catch (e) {
-        await promiseDb.query('ROLLBACK');
+        await conn.rollback();
         console.error('[HATA] Transaction başarısız:', e.message);
+    } finally {
+        conn.release();
     }
 }
 
-// Kademeli Dead-Bot Recovery & Batch Abort (V7)
+// Kademeli Dead-Bot Recovery & Batch Abort (V7/V9)
 async function stagedRecovery() {
-    const promiseDb = db.promise();
+    const conn = await db.promise().getConnection();
     try {
-        // Aşama 1: WARNING (2 Dakika) - Sadece Console'a yaz, izle.
-        const [warnings] = await promiseDb.query(`SELECT username, heartbeat_at FROM accounts WHERE status = 'RESERVED' AND heartbeat_at < DATE_SUB(NOW(), INTERVAL 2 MINUTE) AND heartbeat_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)`);
+        await conn.beginTransaction();
+
+        // Aşama 1: WARNING (2 Dakika)
+        const [warnings] = await conn.query(`SELECT username, heartbeat_at FROM accounts WHERE status = 'RESERVED' AND heartbeat_at < DATE_SUB(NOW(), INTERVAL 2 MINUTE) AND heartbeat_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)`);
         if(warnings.length > 0) {
             console.log(`[WARNING] ${warnings.length} hesapta heartbeat gecikmesi var (2-5 dk arası). İzleniyor.`);
         }
 
-        // Aşama 2: STALE (5 Dakika) - İşareti değiştir ama henüz DB hesabını FAILED yapma. Batch Account'u STALE yap.
-        await promiseDb.query(`UPDATE farm_batch_accounts SET status = 'STALE', last_error = 'STALE - 5 dakika timeout' WHERE status = 'RUNNING' AND heartbeat_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE) AND heartbeat_at >= DATE_SUB(NOW(), INTERVAL 7 MINUTE)`);
+        // Aşama 2: STALE (5 Dakika)
+        await conn.query(`UPDATE farm_batch_accounts SET status = 'STALE', last_error = 'STALE - 5 dakika timeout' WHERE status = 'RUNNING' AND heartbeat_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE) AND heartbeat_at >= DATE_SUB(NOW(), INTERVAL 7 MINUTE)`);
 
         // Aşama 3: RECOVERY & BATCH ABORT (7 Dakika)
-        const [deadAccounts] = await promiseDb.query(`SELECT username, batch_id FROM accounts WHERE status = 'RESERVED' AND heartbeat_at < DATE_SUB(NOW(), INTERVAL 7 MINUTE)`);
+        const [deadAccounts] = await conn.query(`SELECT username, batch_id FROM accounts WHERE status = 'RESERVED' AND heartbeat_at < DATE_SUB(NOW(), INTERVAL 7 MINUTE)`);
         
         if (deadAccounts.length > 0) {
-            // Sadece ölen hesabı değil, o batch'in tamamını Abort ediyoruz.
             let abortedBatches = new Set();
-
             for (const dead of deadAccounts) {
                 if(!dead.batch_id) continue;
                 abortedBatches.add(dead.batch_id);
             }
 
             for (let bId of abortedBatches) {
-                // Batch Durumunu ABORTING yap
-                await promiseDb.query(`UPDATE farm_batches SET status = 'ABORTING', error_message = 'Batch Aborted due to Dead Bot' WHERE batch_id = ?`, [bId]);
+                await conn.query(`UPDATE farm_batches SET status = 'ABORTING', error_message = 'Batch Aborted due to Dead Bot' WHERE batch_id = ?`, [bId]);
                 
-                // Batch içindeki tüm konteynerlere (sağlam olanlar dahil) STOP emri gönder
-                const [containers] = await promiseDb.query(`SELECT container_name FROM farm_batch_accounts WHERE batch_id = ?`, [bId]);
+                const [containers] = await conn.query(`SELECT container_name FROM farm_batch_accounts WHERE batch_id = ?`, [bId]);
                 for (const c of containers) {
                     if(c.container_name) {
-                        await promiseDb.query(`
+                        await conn.query(`
                             INSERT INTO action_queue (action_type, payload, status, created_at) 
                             VALUES ('STOP_CONTAINER', ?, 'PENDING', NOW())
                         `, [JSON.stringify({ container_name: c.container_name })]);
                     }
                 }
 
-                // Batch'e ait tüm hesapları IDLE konumuna iade et (Kuyruğa atıldıkları için container'lar yakında ölecek)
-                await promiseDb.query(`
+                await conn.query(`
                     UPDATE accounts 
                     SET status = 'IDLE', last_error = 'RECOVERED - Batch Aborted', batch_id = NULL
                     WHERE batch_id = ?
                 `, [bId]);
-                
                 console.log(`[RECOVERY] Batch ${bId} Bütünlüğü bozulduğu için ABORTED yapıldı. Tüm botlara STOP emri verildi.`);
             }
         }
 
-        // ABORTING Alert (10 dakikadan uzun süren abort işlemi varsa)
-        const [abortingBatches] = await promiseDb.query(`SELECT batch_id FROM farm_batches WHERE status = 'ABORTING' AND created_at < DATE_SUB(NOW(), INTERVAL 10 MINUTE)`);
+        const [abortingBatches] = await conn.query(`SELECT batch_id FROM farm_batches WHERE status = 'ABORTING' AND created_at < DATE_SUB(NOW(), INTERVAL 10 MINUTE)`);
         for (const b of abortingBatches) {
-            await promiseDb.query(`INSERT INTO system_alerts (severity, alert_type, message, related_entity_type, related_entity_id, created_at) VALUES ('CRITICAL', 'BATCH_ABORT_TIMEOUT', 'Batch ABORTING statüsünde 10 dakikadan uzun süredir bekliyor!', 'BATCH', ?, NOW())`, [b.batch_id]);
+            // Dedupe kontrolü uygulama tarafında yapılabilir veya DB exception catch edilebilir.
+            try {
+                await conn.query(`INSERT INTO system_alerts (severity, alert_type, message, related_entity_type, related_entity_id, created_at) VALUES ('CRITICAL', 'BATCH_ABORT_TIMEOUT', 'Batch ABORTING statüsünde 10 dakikadan uzun süredir bekliyor!', 'BATCH', ?, NOW())`, [b.batch_id]);
+            } catch(alertErr) {} // Duplicate alert prevention based on UNIQUE constraint
         }
 
-        // Batch Status Update (Eğer içindeki tüm hesaplar bittiyse ve durumu RUNNING/ABORTING ise FINISHED/FAILED yap)
-        await promiseDb.query(`
+        await conn.query(`
             UPDATE farm_batches fb
             SET status = IF(status = 'ABORTING', 'FAILED', 'FINISHED'), finished_at = NOW()
             WHERE status IN ('RUNNING', 'ABORTING') AND NOT EXISTS (
@@ -272,8 +290,12 @@ async function stagedRecovery() {
             )
         `);
 
+        await conn.commit();
     } catch (e) {
+        await conn.rollback();
         console.error('[HATA] Kademeli Recovery başarısız:', e.message);
+    } finally {
+        conn.release();
     }
 }
 
