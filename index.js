@@ -262,10 +262,19 @@ async function stagedRecovery() {
                     if(c.container_name) {
                         const actionPayload = JSON.stringify({ container_name: c.container_name });
                         const idemKey = `STOP_CONTAINER:${bId}:${c.container_name}`;
-                        await conn.query(`
-                            INSERT IGNORE INTO action_queue (idempotency_key, action_type, payload, status, created_at, updated_at) 
-                            VALUES (?, 'STOP_CONTAINER', ?, 'PENDING', NOW(), NOW())
-                        `, [idemKey, actionPayload]);
+                        try {
+                            // INSERT IGNORE is dangerous as it swallows other errors. Using try-catch with specific ER_DUP_ENTRY check.
+                            await conn.query(`
+                                INSERT INTO action_queue (idempotency_key, action_type, payload, status, created_at, updated_at) 
+                                VALUES (?, 'STOP_CONTAINER', ?, 'PENDING', NOW(), NOW())
+                            `, [idemKey, actionPayload]);
+                        } catch (err) {
+                            if (err.code === 'ER_DUP_ENTRY') {
+                                console.log(`[INFO] Duplicate STOP_CONTAINER action skipped for ${idemKey}`);
+                            } else {
+                                throw err; // Re-throw real database errors
+                            }
+                        }
                     }
                 }
 

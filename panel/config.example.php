@@ -2,15 +2,19 @@
 // KO-LMS Panel Example Config
 // DO NOT USE THIS FILE IN PRODUCTION. COPY TO config.php AND CHANGE VALUES.
 
-$DATABASE_IP = getenv('DATABASE_IP') ?: 'CHANGE_ME';
-$DATABASE_USR = getenv('DATABASE_USR') ?: 'CHANGE_ME';
-$DATABASE_PWD = getenv('DATABASE_PWD') ?: 'CHANGE_ME';
-$DB_NAME = getenv('DB_NAME') ?: 'CHANGE_ME';
-
-if (empty($DATABASE_IP) || empty($DATABASE_USR) || empty($DATABASE_PWD) || empty($DB_NAME)) {
-    http_response_code(500);
-    exit('Server configuration error: Database credentials missing.');
+function requiredEnv($key) {
+    $value = getenv($key);
+    if ($value === false || $value === '' || $value === 'CHANGE_ME') {
+        http_response_code(500);
+        die("CRITICAL ERROR: Missing required env: " . $key);
+    }
+    return $value;
 }
+
+$DATABASE_IP = requiredEnv('DATABASE_IP');
+$DATABASE_USR = requiredEnv('DATABASE_USR');
+$DATABASE_PWD = requiredEnv('DATABASE_PWD');
+$DB_NAME = requiredEnv('DB_NAME');
 
 try {
     $db = new PDO("mysql:host=$DATABASE_IP;dbname=$DB_NAME", $DATABASE_USR, $DATABASE_PWD);
