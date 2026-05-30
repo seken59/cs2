@@ -24,7 +24,8 @@ function encrypt(text) {
 }
 
 function decrypt(text) {
-    if (!text || !text.includes(':')) return text;
+    if (!text) return null;
+    if (!text.includes(':')) return null;
     try {
         const textParts = text.split(':');
         if (textParts.length !== 3) return null; // iv:ciphertext:authTag

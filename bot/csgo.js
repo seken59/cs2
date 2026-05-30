@@ -8,14 +8,56 @@ const mysql = require('mysql2/promise');
 const TelegramBot = require('node-telegram-bot-api');
 const { decrypt } = require('../utils/crypto.js');
 
+const DATABASE_IP = process.env.DATABASE_IP;
+const DATABASE_USR = process.env.DATABASE_USR;
+const DATABASE_PWD = process.env.DATABASE_PWD;
+const DB_NAME = process.env.DB_NAME;
+const TG_BOT_TOKEN = process.env.TG_BOT_TOKEN;
+const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
+if (!DATABASE_IP || !DATABASE_USR || !DATABASE_PWD || !DB_NAME) {
+    console.error(`[BOT-${process.env.BOT_ID}] CRITICAL ERROR: DB environment variables missing.`);
+    process.exit(1);
+}
+
+const botTelegram = TG_BOT_TOKEN ? new TelegramBot(TG_BOT_TOKEN, { polling: false }) : null;
+
+function sendTelegram(message) {
+    if (botTelegram && CHAT_ID) {
+        botTelegram.sendMessage(CHAT_ID, message).catch(() => {});
+    }
+}
+
+async function handleDecryptFailure() {
+    console.error(`[BOT-${process.env.BOT_ID}] CRITICAL ERROR: Decrypt failed. Plaintext fallback is NOT allowed.`);
+    try {
+        const db = await mysql.createConnection({ host: DATABASE_IP, user: DATABASE_USR, password: DATABASE_PWD, database: DB_NAME });
+        const [rows] = await db.execute(`SELECT batch_id FROM accounts WHERE username = ? AND status = 'RESERVED'`, [process.env.ACCOUNT_USER]);
+        if(rows.length > 0) {
+            const batchId = rows[0].batch_id;
+            await db.execute(`UPDATE accounts SET status = 'FAILED_SECRET', last_error = 'Decrypt failed', batch_id = NULL WHERE username = ?`, [process.env.ACCOUNT_USER]);
+            await db.execute(`UPDATE farm_batches SET status = 'ABORTING', error_message = 'Batch Aborted due to Secret Decrypt Failure' WHERE batch_id = ?`, [batchId]);
+            await db.execute(`INSERT INTO system_alerts (severity, alert_type, message, related_entity_type, related_entity_id, created_at) VALUES ('CRITICAL', 'SECRET_DECRYPT_FAILED', 'Bot şifre çözme hatası!', 'BATCH', ?, NOW())`, [batchId]);
+        }
+        await db.end();
+    } catch(e) {}
+    process.exit(1);
+}
+
+const decPass = decrypt(process.env.ACCOUNT_PASS);
+const decSecret = decrypt(process.env.ACCOUNT_SHARED_SECRET);
+if (!decPass || !decSecret) {
+    handleDecryptFailure();
+}
+
 const account = {
     username: process.env.ACCOUNT_USER,
-    password: decrypt(process.env.ACCOUNT_PASS) || process.env.ACCOUNT_PASS,
-    sharedSecret: decrypt(process.env.ACCOUNT_SHARED_SECRET) || process.env.ACCOUNT_SHARED_SECRET,
+    password: decPass,
+    sharedSecret: decSecret,
     proxy: process.env.SOCKS5_PROXY,
     lobbyId: process.env.LOBBY_ID,
     botId: process.env.BOT_ID,
-    batchId: null // DB'den başlangıçta çekilecek
+    batchId: null
 };
 
 console.log(`[BOT-${account.botId}] Konteyner Başlatıldı. Hedef Lobi: ${account.lobbyId}`);
@@ -27,10 +69,10 @@ const { watchConsoleLog } = require('./macro_engine');
 // 1. AŞAMA: Fiziksel Steam ve CS2 Başlatma (XP Kasma Aşaması)
 async function startPhysicalGame() {
     try {
-        // VACnet / Trust Factor İnsansı Gecikme (Randomized Delay)
+        // İnsansı Gecikme (Randomized Delay)
         // Botların aynı anda tıklamasını engellemek için 1 ile 3 dakika arası rastgele bekle.
         const randomDelay = Math.floor(Math.random() * (180000 - 60000 + 1)) + 60000;
-        console.log(`[BOT-${account.botId}] VACnet Evasion: Oyuna girmeden önce ${randomDelay/1000} saniye insansı gecikme uygulanıyor...`);
+        console.log(`[BOT-${account.botId}] Oyuna girmeden önce ${randomDelay/1000} saniye gecikme uygulanıyor...`);
         await new Promise(resolve => setTimeout(resolve, randomDelay));
 
         startHeartbeat();
@@ -53,7 +95,7 @@ async function startPhysicalGame() {
         }
 
         // 2FA ve Steam Giriş İşlemi
-        await performLogin();
+        await performLogin(account);
 
         // CS2 Lobi Kurma ve Arama
         createLobbyAndSearch();
@@ -61,23 +103,18 @@ async function startPhysicalGame() {
         // Macro Engine'i Başlat (Log okuyucu)
         watchConsoleLog();
         
-        // Gerçekte bu işlemi Macro Engine veya CSGO GC eventi ile kapatmalıyız.
-        // Şimdilik 20 dakika sonra zorla kapatıp XP kontrolüne geçiyoruz.
         setTimeout(() => {
             console.log(`[BOT-${account.botId}] Maç süresi doldu. Graceful Shutdown başlatılıyor...`);
             
             try {
                 if (steamProc && steamProc.pid) {
-                    // Steam ve alt process'leri kapatmak için SIGTERM gönder
                     process.kill(steamProc.pid, 'SIGTERM');
                     console.log(`[BOT-${account.botId}] Graceful Shutdown başlatıldı. Steam'e SIGTERM gönderiliyor...`);
                     
                     try {
-                        // Sadece bu konteynerin içindeki steam process ağacına SIGTERM gönder
                         execSync(`kill -TERM -$(ps -o pgid= -p $(pgrep -f "steam" -n) | grep -o '[0-9]*') 2>/dev/null`);
                     } catch(e){}
 
-                    // 10 Saniye sonra hala açıksa Force Kill ve Temizlik
                     setTimeout(() => {
                         console.log(`[BOT-${account.botId}] 10s doldu. Steam hala açıksa SIGKILL ile zorla kapatılacak.`);
                         try {
@@ -97,26 +134,6 @@ async function startPhysicalGame() {
         }, 20 * 60 * 1000);
     } catch (err) {
         console.error(`[BOT-${account.botId}] Başlatma Hatası:`, err);
-    }
-}
-
-const DATABASE_IP = process.env.DATABASE_IP;
-const DATABASE_USR = process.env.DATABASE_USR;
-const DATABASE_PWD = process.env.DATABASE_PWD;
-const DB_NAME = process.env.DB_NAME;
-const TG_BOT_TOKEN = process.env.TG_BOT_TOKEN;
-const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-
-if (!DATABASE_IP || !DATABASE_USR || !DATABASE_PWD || !DB_NAME) {
-    console.error(`[BOT-${account.botId}] CRITICAL ERROR: DB environment variables missing.`);
-    process.exit(1);
-}
-
-const botTelegram = TG_BOT_TOKEN ? new TelegramBot(TG_BOT_TOKEN, { polling: false }) : null;
-
-function sendTelegram(message) {
-    if (botTelegram && CHAT_ID) {
-        botTelegram.sendMessage(CHAT_ID, message).catch(() => {});
     }
 }
 
@@ -147,16 +164,14 @@ async function startHeartbeat() {
                     [account.username, account.batchId]
                 );
                 
-                // Eğer hiçbir satır güncellenmediyse (Konteyner Dead-Bot Recovery'ye takılmış veya hesabı düşmüş demektir)
                 if (result.affectedRows === 0) {
-                    console.error(`[BOT-${account.botId}] CRITICAL ERROR: Heartbeat reddedildi! Batch yetkisi düşmüş (Zombie Process). Kendini imha ediyor...`);
+                    console.error(`[BOT-${account.botId}] CRITICAL ERROR: Heartbeat reddedildi! Batch yetkisi düşmüş. Kendini imha ediyor...`);
                     try {
                         execSync(`kill -9 -$(ps -o pgid= -p $(pgrep -f "steam" -n) | grep -o '[0-9]*') 2>/dev/null`);
                     } catch(e){}
                     process.exit(1);
                 }
 
-                // Farm Batch tablolarını da güncelle
                 await db.execute(`UPDATE farm_batch_accounts SET heartbeat_at = NOW() WHERE batch_id = ? AND account_id = (SELECT id FROM accounts WHERE username = ?)`, [account.batchId, account.username]);
                 await db.execute(`UPDATE farm_batches SET last_heartbeat_at = NOW() WHERE batch_id = ?`, [account.batchId]);
 
@@ -191,7 +206,6 @@ function checkAndClaimDrop() {
 
     csgo.on('connectedToGC', () => {
         console.log(`[BOT-${account.botId}] GC bağlandı, profil verisi bekleniyor...`);
-        // Kendi profilimizi istek yap
         csgo.requestPlayersProfile(client.steamID);
     });
 
@@ -240,16 +254,15 @@ function checkAndClaimDrop() {
     });
 }
 
-// VACnet Bypass: Rastgele Ydotool Makrosu
+// Input automation is performed through configured input tooling. This provides no guarantee against platform-side detection.
 function performHumanLikeAction() {
-    // Statik hareket ban yedirir. Rastgele WASD ve Mouse
     const actions = [
         `ydotool key 17:1 17:0`, // W
         `ydotool key 30:1 30:0`, // A
         `ydotool key 31:1 31:0`, // S
         `ydotool key 32:1 32:0`, // D
         `ydotool click 40`,      // Sol Tık
-        `ydotool mousemove -x ${Math.floor(Math.random()*50)-25} -y ${Math.floor(Math.random()*50)-25}` // Rastgele crosshair sarsıntısı
+        `ydotool mousemove -x ${Math.floor(Math.random()*50)-25} -y ${Math.floor(Math.random()*50)-25}`
     ];
     const randomAction = actions[Math.floor(Math.random() * actions.length)];
     try {

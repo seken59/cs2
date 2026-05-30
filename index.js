@@ -101,7 +101,9 @@ db.getConnection((err, connection) => {
         max_retry INT DEFAULT 3,
         timeout_seconds INT DEFAULT 300,
         locked_until DATETIME NULL,
+        last_error TEXT NULL,
         created_at DATETIME NOT NULL,
+        updated_at DATETIME NULL,
         completed_at DATETIME NULL,
         result TEXT NULL
     )`);
@@ -258,10 +260,12 @@ async function stagedRecovery() {
                 const [containers] = await conn.query(`SELECT container_name FROM farm_batch_accounts WHERE batch_id = ?`, [bId]);
                 for (const c of containers) {
                     if(c.container_name) {
+                        const actionPayload = JSON.stringify({ container_name: c.container_name });
+                        const idemKey = `STOP_CONTAINER:${bId}:${c.container_name}`;
                         await conn.query(`
-                            INSERT INTO action_queue (action_type, payload, status, created_at) 
-                            VALUES ('STOP_CONTAINER', ?, 'PENDING', NOW())
-                        `, [JSON.stringify({ container_name: c.container_name })]);
+                            INSERT IGNORE INTO action_queue (idempotency_key, action_type, payload, status, created_at, updated_at) 
+                            VALUES (?, 'STOP_CONTAINER', ?, 'PENDING', NOW(), NOW())
+                        `, [idemKey, actionPayload]);
                     }
                 }
 

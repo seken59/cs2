@@ -3,10 +3,8 @@ const { execSync } = require('child_process');
 
 /**
  * MACRO ENGINE V2 (MULTI-PROBABILITY & FUZZING)
- * VACnet'in "Isı Haritası" (Heatmap) analizini kör etmek için tasarlandı.
- * Botlar her raund aynı noktada buluşmaz. Raund numarasına göre 4 farklı rotadan
- * birini seçerler. Hareket süreleri (milisaniye) "%10 Fuzzing" (sapma) ile rastgeleleştirilir.
- * Vuruşlar nokta atışı değil, "Spray & Sweep" (geniş açılı tarama) ile yapılır.
+ * Input automation is performed through configured input tooling. This provides no guarantee against platform-side detection.
+ * Botlar her raund rotalarını seçerler.
  */
 
 const LOG_FILE = '/home/steamuser/cs2_merged/game/csgo/console.log';
@@ -124,7 +122,7 @@ async function executeMacro(routeIndex, isCT, roundNum) {
 }
 
 function watchConsoleLog() {
-    console.log(`[MACRO] Çok İhtimali VACnet Bypass Aktif. console.log dinleniyor...`);
+    console.log(`[MACRO] Console.log dinleniyor...`);
     let fileSize = 0;
     let currentRound = 0;
     

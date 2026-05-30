@@ -67,14 +67,13 @@ async function processQueue() {
             sendTelegram(`[ALARM] Action Queue Sıkıştı! ${staleTasks.length} adet işlem 5 dakikadan uzun süredir PENDING durumunda.`);
         }
 
-        // PENDING durumundaki görevleri al (FOR UPDATE SKIP LOCKED kullanarak kilitliyoruz)
+        // PENDING durumundaki görevleri veya PROCESSING'de sıkışmış görevleri al (FOR UPDATE SKIP LOCKED kullanarak kilitliyoruz)
         const conn = await db.promise().getConnection();
         try {
             await conn.beginTransaction();
             const [rows] = await conn.query(`
                 SELECT * FROM action_queue 
-                WHERE status = 'PENDING' 
-                AND (locked_until IS NULL OR locked_until < NOW())
+                WHERE (status = 'PENDING' OR (status = 'PROCESSING' AND locked_until < NOW()))
                 ORDER BY created_at ASC 
                 LIMIT 1 
                 FOR UPDATE SKIP LOCKED
@@ -90,18 +89,19 @@ async function processQueue() {
             
             // Timeout & Retry kontrolü
             if (task.retry_count >= task.max_retry) {
-                await conn.query(`UPDATE action_queue SET status = 'FAILED', result = 'Max retry exceeded' WHERE id = ?`, [task.id]);
+                await conn.query(`UPDATE action_queue SET status = 'FAILED', last_error = 'Max retry exceeded', updated_at = NOW() WHERE id = ?`, [task.id]);
+                await db.query(`INSERT INTO system_alerts (severity, alert_type, message, created_at) VALUES ('CRITICAL', 'ACTION_FAILED_MAX_RETRY', ?, NOW())`, [`Action ID ${task.id} failed after max retries`]);
                 await conn.commit();
                 conn.release();
                 return;
             }
 
             // İşleniyor olarak işaretle ve kilit süresi koy
-            await conn.query(`UPDATE action_queue SET status = 'PROCESSING', worker_id = ?, locked_until = DATE_ADD(NOW(), INTERVAL ? SECOND) WHERE id = ?`, [WORKER_ID, task.timeout_seconds, task.id]);
+            await conn.query(`UPDATE action_queue SET status = 'PROCESSING', worker_id = ?, locked_until = DATE_ADD(NOW(), INTERVAL ? SECOND), updated_at = NOW() WHERE id = ?`, [WORKER_ID, task.timeout_seconds, task.id]);
             await conn.commit();
             conn.release();
 
-        console.log(`[WORKER] İşlem yürütülüyor: ${task.action_type} (ID: ${task.id})`);
+        console.log(`[WORKER] İşlem yürütülüyor: ${task.action_type} (ID: ${task.id}, Idempotency: ${task.idempotency_key})`);
         
         let payload = {};
         try { payload = JSON.parse(task.payload); } catch(e) {}
@@ -111,7 +111,7 @@ async function processQueue() {
         if (task.action_type === 'STOP_CONTAINER') {
             const cName = payload.container_name;
             if (!cName || !allowedContainers.has(cName)) {
-                await db.query(`UPDATE action_queue SET status = 'FAILED', completed_at = NOW(), result = ? WHERE id = ?`, ["Geçersiz veya yetkisiz container: " + cName, task.id]);
+                await db.query(`UPDATE action_queue SET status = 'FAILED', completed_at = NOW(), last_error = ?, updated_at = NOW() WHERE id = ?`, ["Geçersiz veya yetkisiz container: " + cName, task.id]);
                 return;
             }
 
@@ -122,10 +122,15 @@ async function processQueue() {
                 const resultMsg = `Container ${cName} stopped with code ${code}`;
                 const status = code === 0 ? 'COMPLETED' : 'FAILED';
                 const connection = await mysql.createConnection({ host: DATABASE_IP, user: DATABASE_USR, password: DATABASE_PWD, database: DB_NAME });
-                if (status === 'FAILED' && task.retry_count < task.max_retry - 1) {
-                    await connection.query(`UPDATE action_queue SET status = 'PENDING', retry_count = retry_count + 1, locked_until = NULL WHERE id = ?`, [task.id]);
+                if (status === 'FAILED') {
+                    if (task.retry_count < task.max_retry - 1) {
+                        await connection.query(`UPDATE action_queue SET status = 'PENDING', retry_count = retry_count + 1, locked_until = NULL, last_error = ?, updated_at = NOW() WHERE id = ?`, [resultMsg, task.id]);
+                    } else {
+                        await connection.query(`UPDATE action_queue SET status = 'FAILED', completed_at = NOW(), last_error = ?, updated_at = NOW() WHERE id = ?`, [resultMsg, task.id]);
+                        await connection.query(`INSERT INTO system_alerts (severity, alert_type, message, created_at) VALUES ('CRITICAL', 'ACTION_FAILED', ?, NOW())`, [`Action ID ${task.id} failed stop container`]);
+                    }
                 } else {
-                    await connection.query(`UPDATE action_queue SET status = ?, completed_at = NOW(), result = ? WHERE id = ?`, [status, resultMsg, task.id]);
+                    await connection.query(`UPDATE action_queue SET status = ?, completed_at = NOW(), result = ?, updated_at = NOW() WHERE id = ?`, [status, resultMsg, task.id]);
                 }
                 connection.end();
             });
@@ -137,13 +142,13 @@ async function processQueue() {
                 const resultMsg = `Cleanup finished with code ${code}`;
                 const status = code === 0 ? 'COMPLETED' : 'FAILED';
                 const connection = await mysql.createConnection({ host: DATABASE_IP, user: DATABASE_USR, password: DATABASE_PWD, database: DB_NAME });
-                await connection.query(`UPDATE action_queue SET status = ?, completed_at = NOW(), result = ? WHERE id = ?`, [status, resultMsg, task.id]);
+                await connection.query(`UPDATE action_queue SET status = ?, completed_at = NOW(), ${status === 'FAILED' ? 'last_error' : 'result'} = ?, updated_at = NOW() WHERE id = ?`, [status, resultMsg, task.id]);
                 connection.end();
             });
             db.end();
             return;
         } else {
-            await db.query(`UPDATE action_queue SET status = 'FAILED', completed_at = NOW(), result = ? WHERE id = ?`, ["Bilinmeyen işlem tipi", task.id]);
+            await db.query(`UPDATE action_queue SET status = 'FAILED', completed_at = NOW(), last_error = ?, updated_at = NOW() WHERE id = ?`, ["Bilinmeyen işlem tipi", task.id]);
             db.end();
         }
 

@@ -8,6 +8,7 @@
   - Fiziksel Steam istemcisi ile Node.js Game Coordinator paketleri KESİNLİKLE aynı anda çalışmayacak. 
   - Login işlemleri ve lobi hareketleri `xdotool` kullanılarak %100 klavye/mouse simülasyonu ile yapılacak.
   - Maç içi AFK engelleme için konsol üzerinden rastgele tuş enjeksiyonları yapılacak.
-  - **Macro Engine V2 (VACnet Bypass):** Botlar sadece ortada buluşup ölmez. Haritanın 4 farklı rotasından rastgele birini seçip yürür. Adım süreleri +- %10 Fuzzing (rastgelelik) içerir. Ateş ederken Spray (geniş açı) atarlar.
+  - **Macro Engine V2 (Input Automation):** Botlar sadece ortada buluşup ölmez. Haritanın 4 farklı rotasından rastgele birini seçip yürür. Adım süreleri +- %10 Fuzzing (rastgelelik) içerir. Ateş ederken Spray (geniş açı) atarlar.
   - **Çoklu Harita Desteği:** Sistem tek bir haritaya bağımlı bırakılmadı. `de_boyard`, `de_chalice`, `de_vertigo`, `de_overpass`, ve `de_nuke` haritalarına ait rotalar ve pusma süreleri (ct_walk, t_walk, turn degrees) sisteme kodlandı. Botlar `console.log` üzerinden "Map:" yazısını gördüklerinde taktikleri dinamik değiştirir.
+
 

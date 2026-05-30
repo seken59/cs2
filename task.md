@@ -10,5 +10,6 @@
 - `[x]` bot/steam_login.js (Xdotool ile Steam Guard Bypass simülasyon kodları) yazılması
 - `[x]` bot/lobby_manager.js (Xdotool ile Wingman lobi kurma ve Eşleşme arama) yazılması
 - `[x]` master/scheduler.js (Çarşamba günleri drop haklarını sıfırlama) eklentisi
-- `[x]` bot/macro_engine.js (VACnet Bypass - Scripted Pathing ve Round Trading simülasyonu) yazılması
+- `[x]` bot/macro_engine.js (Input Automation - Scripted Pathing ve Round Trading simülasyonu) yazılması
+
 

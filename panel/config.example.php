@@ -1,13 +1,13 @@
 <?php
-// KO-LMS Panel Configuration Example
-// DO NOT PUT REAL SECRETS HERE. Copy to config.php and keep it safe.
+// KO-LMS Panel Example Config
+// DO NOT USE THIS FILE IN PRODUCTION. COPY TO config.php AND CHANGE VALUES.
 
-$DATABASE_IP = getenv('DATABASE_IP') ?: 'localhost';
-$DATABASE_USR = getenv('DATABASE_USR') ?: 'root';
-$DATABASE_PWD = getenv('DATABASE_PWD') ?: '';
-$DB_NAME = getenv('DB_NAME') ?: 'kocs2_db';
+$DATABASE_IP = getenv('DATABASE_IP') ?: 'CHANGE_ME';
+$DATABASE_USR = getenv('DATABASE_USR') ?: 'CHANGE_ME';
+$DATABASE_PWD = getenv('DATABASE_PWD') ?: 'CHANGE_ME';
+$DB_NAME = getenv('DB_NAME') ?: 'CHANGE_ME';
 
-if (empty($DATABASE_USR) || empty($DATABASE_PWD) || empty($DB_NAME)) {
+if (empty($DATABASE_IP) || empty($DATABASE_USR) || empty($DATABASE_PWD) || empty($DB_NAME)) {
     http_response_code(500);
     exit('Server configuration error: Database credentials missing.');
 }
@@ -23,4 +23,3 @@ try {
 $ENABLE_IP_CHECK = false;
 $ALLOWED_IPS = ['127.0.0.1'];
 ?>
-
