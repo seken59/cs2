@@ -172,6 +172,90 @@ try {
         restore_test_status VARCHAR(50)
     )");
     
+    $db->exec("CREATE TABLE IF NOT EXISTS drop_events (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        account_id BIGINT NOT NULL,
+        username VARCHAR(128) NOT NULL,
+        batch_id VARCHAR(128) NULL,
+        event_type ENUM('WEEKLY_DROP', 'INVENTORY_SCAN', 'MANUAL_ENTRY') NOT NULL DEFAULT 'WEEKLY_DROP',
+        status ENUM('DETECTED', 'VALUED', 'CLAIMED', 'FAILED', 'IGNORED') NOT NULL DEFAULT 'DETECTED',
+        detected_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        valued_at DATETIME NULL,
+        total_estimated_usd DECIMAL(12, 4) NULL,
+        total_estimated_try DECIMAL(12, 2) NULL,
+        source VARCHAR(64) NULL,
+        raw_payload JSON NULL,
+        last_error TEXT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NULL
+    )");
+
+    $db->exec("CREATE TABLE IF NOT EXISTS drop_items (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        drop_event_id BIGINT NOT NULL,
+        account_id BIGINT NOT NULL,
+        username VARCHAR(128) NOT NULL,
+        asset_id VARCHAR(64) NULL,
+        class_id VARCHAR(64) NULL,
+        instance_id VARCHAR(64) NULL,
+        market_hash_name VARCHAR(255) NOT NULL,
+        display_name VARCHAR(255) NULL,
+        display_name_tr VARCHAR(255) NULL,
+        item_type VARCHAR(64) NULL,
+        exterior VARCHAR(64) NULL,
+        exterior_tr VARCHAR(64) NULL,
+        float_value DECIMAL(18, 12) NULL,
+        paint_index INT NULL,
+        paint_seed INT NULL,
+        rarity VARCHAR(64) NULL,
+        inspect_link TEXT NULL,
+        icon_url TEXT NULL,
+        selected TINYINT(1) NOT NULL DEFAULT 0,
+        price_usd DECIMAL(12, 4) NULL,
+        price_try DECIMAL(12, 2) NULL,
+        price_source VARCHAR(64) NULL,
+        price_confidence ENUM('HIGH','MEDIUM','LOW','UNKNOWN') NOT NULL DEFAULT 'UNKNOWN',
+        price_checked_at DATETIME NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )");
+
+    $db->exec("CREATE TABLE IF NOT EXISTS item_price_cache (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        market_hash_name VARCHAR(255) NOT NULL,
+        exterior VARCHAR(64) NULL,
+        float_bucket VARCHAR(32) NULL,
+        steam_lowest_usd DECIMAL(12, 4) NULL,
+        steam_median_usd DECIMAL(12, 4) NULL,
+        steam_volume INT NULL,
+        csfloat_lowest_usd DECIMAL(12, 4) NULL,
+        csfloat_volume INT NULL,
+        best_estimate_usd DECIMAL(12, 4) NULL,
+        best_source VARCHAR(64) NULL,
+        checked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME NOT NULL,
+        UNIQUE KEY uniq_price_cache (market_hash_name, exterior, float_bucket)
+    )");
+
+    $db->exec("CREATE TABLE IF NOT EXISTS price_sources (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        source_name VARCHAR(64) NOT NULL UNIQUE,
+        enabled TINYINT(1) NOT NULL DEFAULT 1,
+        api_key_env_name VARCHAR(128) NULL,
+        base_url VARCHAR(255) NULL,
+        rate_limit_per_minute INT NULL,
+        last_success_at DATETIME NULL,
+        last_error_at DATETIME NULL,
+        last_error TEXT NULL
+    )");
+    
+    // Seed price_sources if empty
+    $countPS = $db->query("SELECT COUNT(*) FROM price_sources")->fetchColumn();
+    if ($countPS == 0) {
+        $db->exec("INSERT INTO price_sources (source_name, enabled, api_key_env_name, rate_limit_per_minute) VALUES 
+            ('CSFloat', 1, 'CSFLOAT_API_KEY', 120),
+            ('SteamMarket', 1, 'STEAM_API_KEY', 20)");
+    }
+
     // Seed system_settings if empty
     $count = $db->query("SELECT COUNT(*) FROM system_settings")->fetchColumn();
     if ($count == 0) {

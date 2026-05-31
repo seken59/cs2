@@ -44,8 +44,25 @@ function render_header($title = "Dashboard") {
             <p class="text-xs text-slate-400 mt-1">CS Operations Center</p>
         </div>
         <nav class="p-4 flex-1 space-y-1 overflow-y-auto text-sm">
-            <a href="dashboard.php" class="flex items-center px-4 py-3 text-slate-300 hover:bg-white/5 hover:text-white rounded-lg transition-colors"><i class="fas fa-chart-line w-6"></i> Dashboard</a>
-            <a href="accounts.php" class="flex items-center px-4 py-3 text-slate-300 hover:bg-white/5 hover:text-white rounded-lg transition-colors"><i class="fas fa-users w-6"></i> Hesaplar</a>
+            <a href="dashboard.php" class="flex items-center px-4 py-3 rounded-xl <?= $currentPage=='dashboard.php'?'bg-primary text-white font-bold':'text-slate-300 hover:bg-slate-800' ?> transition-all group">
+                <i class="fas fa-chart-pie w-6 <?= $currentPage=='dashboard.php'?'':'text-slate-400 group-hover:text-primary' ?> transition-colors"></i> Dashboard
+            </a>
+            <a href="accounts.php" class="flex items-center px-4 py-3 rounded-xl <?= $currentPage=='accounts.php'?'bg-primary text-white font-bold':'text-slate-300 hover:bg-slate-800' ?> transition-all group">
+                <i class="fas fa-users w-6 <?= $currentPage=='accounts.php'?'':'text-slate-400 group-hover:text-primary' ?> transition-colors"></i> Hesap Envanteri
+            </a>
+            
+            <div class="px-4 py-2 mt-4 text-xs font-bold text-slate-500 uppercase tracking-wider">LMS & Raporlar</div>
+            <a href="drops.php" class="flex items-center px-4 py-3 rounded-xl <?= $currentPage=='drops.php'?'bg-emerald-600 text-white font-bold':'text-slate-300 hover:bg-slate-800' ?> transition-all group">
+                <i class="fas fa-box-open w-6 <?= $currentPage=='drops.php'?'':'text-emerald-400 group-hover:text-emerald-300' ?> transition-colors"></i> Drop Geçmişi
+            </a>
+            <a href="revenue_report.php" class="flex items-center px-4 py-3 rounded-xl <?= $currentPage=='revenue_report.php'?'bg-green-600 text-white font-bold':'text-slate-300 hover:bg-slate-800' ?> transition-all group">
+                <i class="fas fa-chart-line w-6 <?= $currentPage=='revenue_report.php'?'':'text-green-400 group-hover:text-green-300' ?> transition-colors"></i> Gelir Raporu
+            </a>
+            <a href="price_sources.php" class="flex items-center px-4 py-3 rounded-xl <?= $currentPage=='price_sources.php'?'bg-indigo-600 text-white font-bold':'text-slate-300 hover:bg-slate-800' ?> transition-all group">
+                <i class="fas fa-dollar-sign w-6 <?= $currentPage=='price_sources.php'?'':'text-indigo-400 group-hover:text-indigo-300' ?> transition-colors"></i> Fiyat Kaynakları
+            </a>
+
+            <div class="px-4 py-2 mt-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Operasyon</div>
             <a href="batches.php" class="flex items-center px-4 py-3 text-slate-300 hover:bg-white/5 hover:text-white rounded-lg transition-colors"><i class="fas fa-layer-group w-6"></i> Batchler</a>
             <a href="action_queue.php" class="flex items-center px-4 py-3 text-slate-300 hover:bg-white/5 hover:text-white rounded-lg transition-colors"><i class="fas fa-tasks w-6"></i> Action Queue</a>
             <a href="workers.php" class="flex items-center px-4 py-3 text-slate-300 hover:bg-white/5 hover:text-white rounded-lg transition-colors"><i class="fas fa-server w-6"></i> Workerlar</a>
