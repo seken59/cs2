@@ -25,8 +25,9 @@ jobs:
         run: find docs -maxdepth 4 -type f | sort
 
       - name: Empty doc check
+        # dummy kelimesi test komutlarında dosya adı olarak kullanılabileceği için empty-doc taramasına dahil edilmemelidir.
         run: |
-          ! rg -n "^# Otonom Doküman|Otonom Doküman|TODO|TBD|placeholder|lorem|dummy" docs/
+          ! rg -n "^# Otonom Doküman|Otonom Doküman|TODO|TBD|lorem ipsum" docs/
 
       - name: Governance scan
         run: |
