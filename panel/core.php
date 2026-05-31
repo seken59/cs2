@@ -12,6 +12,7 @@ if (!file_exists($configPath)) {
     die("Sistem konfigürasyon dosyası bulunamadı. Lütfen config.php'yi oluşturun.");
 }
 require_once $configPath;
+require_once __DIR__ . '/encrypt_helper.php';
 
 function getUserIP() {
     if (!empty($_SERVER['HTTP_CLIENT_IP'])) return $_SERVER['HTTP_CLIENT_IP'];

@@ -1,40 +1,24 @@
 <?php
 // panel/action_queue.php
-require_once __DIR__ . '/layout.php';
+require_once __DIR__ . '/core.php';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? '';
-    $id = $_POST['id'] ?? 0;
-    
-    if ($action === 'cancel' && $id) {
-        $stmt = $db->prepare("UPDATE action_queue SET status = 'CANCELLED', updated_at = NOW() WHERE id = ? AND status IN ('PENDING', 'PROCESSING')");
-        $stmt->execute([$id]);
-        audit_log('action_queue_cancel', 'action_queue', $id);
-    } elseif ($action === 'retry' && $id) {
-        $stmt = $db->prepare("UPDATE action_queue SET status = 'PENDING', retry_count = retry_count + 1, locked_until = NULL, updated_at = NOW() WHERE id = ? AND status IN ('FAILED', 'DEAD', 'PROCESSING')");
-        $stmt->execute([$id]);
-        audit_log('action_queue_retry', 'action_queue', $id);
-    } elseif ($action === 'mark_dead' && $id) {
-        $stmt = $db->prepare("UPDATE action_queue SET status = 'DEAD', updated_at = NOW() WHERE id = ? AND status = 'FAILED'");
-        $stmt->execute([$id]);
-        audit_log('action_queue_mark_dead', 'action_queue', $id);
-    }
+try {
+    // Basic init or setup if needed
+} catch (Throwable $e) {
+    error_log("ActionQueue View Error: " . $e->getMessage());
+    $fatalError = "Modül yüklenemedi. Lütfen logları kontrol edin.";
 }
 
 $statusFilter = $_GET['status'] ?? '';
-$where = "";
-$params = [];
-if ($statusFilter) {
-    $where = "WHERE status = ?";
-    $params[] = $statusFilter;
-}
-
-$actions = $db->prepare("SELECT * FROM action_queue $where ORDER BY created_at DESC LIMIT 100");
-$actions->execute($params);
-$actions = $actions->fetchAll(PDO::FETCH_ASSOC);
 
 render_header('Action Queue');
 ?>
+
+<script>
+// Global variables for AJAX
+const csrfToken = <?= json_encode($_SESSION['csrf_token'] ?? '') ?>;
+const currentStatusFilter = <?= json_encode($statusFilter) ?>;
+</script>
 
 <div class="glass-panel rounded-2xl overflow-hidden">
     <div class="p-6 border-b border-white/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -50,6 +34,7 @@ render_header('Action Queue');
         </div>
     </div>
     <div class="overflow-x-auto">
+        <div id="actionToast" class="hidden fixed bottom-4 right-4 bg-slate-800 text-white px-4 py-2 rounded shadow-lg z-50 transition-opacity duration-300">İşlem başarılı.</div>
         <table class="w-full text-left border-collapse">
             <thead>
                 <tr class="bg-white/5 text-slate-400 text-sm uppercase tracking-wider">
@@ -60,70 +45,136 @@ render_header('Action Queue');
                     <th class="p-4 font-medium text-right">İşlem</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-white/5">
-                <?php if (count($actions) === 0): ?>
-                <tr><td colspan="5" class="p-8 text-center text-slate-500">Kuyrukta kayıt bulunmuyor.</td></tr>
-                <?php endif; ?>
-                
-                <?php foreach($actions as $a): 
-                    $sColor = 'text-slate-400';
-                    if ($a['status'] === 'PENDING') $sColor = 'text-blue-400';
-                    if ($a['status'] === 'PROCESSING') $sColor = 'text-purple-400';
-                    if ($a['status'] === 'COMPLETED') $sColor = 'text-green-400';
-                    if ($a['status'] === 'FAILED') $sColor = 'text-red-400';
-                    if ($a['status'] === 'DEAD') $sColor = 'text-slate-500';
-                ?>
-                <tr class="hover:bg-white/[0.02] transition-colors group">
-                    <td class="p-4">
-                        <div class="font-mono text-xs text-slate-500 mb-1">#<?= $a['id'] ?></div>
-                        <div class="font-bold text-slate-200"><?= htmlspecialchars($a['action_type']) ?></div>
-                        <div class="text-[10px] text-slate-500 truncate max-w-[200px]" title="<?= htmlspecialchars($a['payload']) ?>"><?= htmlspecialchars($a['payload']) ?></div>
-                    </td>
-                    <td class="p-4 font-semibold <?= $sColor ?>"><?= $a['status'] ?></td>
-                    <td class="p-4 text-sm text-slate-300">
-                        <div>Retry: <?= $a['retry_count'] ?>/<?= $a['max_retry'] ?></div>
-                        <div class="text-xs text-slate-500">Timeout: <?= $a['timeout_seconds'] ?>s</div>
-                        <?php if($a['last_error']): ?>
-                            <div class="text-[10px] text-red-400 truncate max-w-[150px]" title="<?= htmlspecialchars($a['last_error']) ?>"><?= htmlspecialchars($a['last_error']) ?></div>
-                        <?php endif; ?>
-                    </td>
-                    <td class="p-4 text-xs text-slate-400">
-                        <div>Oluşturulma: <?= $a['created_at'] ?></div>
-                        <div>Güncelleme: <?= $a['updated_at'] ?></div>
-                    </td>
-                    <td class="p-4 text-right space-x-2">
-                        <?php if(in_array($a['status'], ['PENDING', 'PROCESSING'])): ?>
-                            <button onclick="queueAction('cancel', <?= $a['id'] ?>)" class="text-xs bg-slate-800 hover:bg-red-500/20 text-red-400 px-3 py-1 rounded border border-white/5 transition-colors">Cancel</button>
-                        <?php endif; ?>
-                        
-                        <?php if(in_array($a['status'], ['FAILED', 'DEAD', 'PROCESSING'])): ?>
-                            <button onclick="queueAction('retry', <?= $a['id'] ?>)" class="text-xs bg-slate-800 hover:bg-blue-500/20 text-blue-400 px-3 py-1 rounded border border-white/5 transition-colors">Retry</button>
-                        <?php endif; ?>
-
-                        <?php if($a['status'] === 'FAILED'): ?>
-                            <button onclick="queueAction('mark_dead', <?= $a['id'] ?>)" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1 rounded border border-white/5 transition-colors">Mark DEAD</button>
-                        <?php endif; ?>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
+            <tbody id="queueTableBody" class="divide-y divide-white/5">
+                <tr><td colspan="5" class="p-8 text-center text-slate-500"><i class="fas fa-spinner fa-spin mr-2"></i> Yükleniyor...</td></tr>
             </tbody>
         </table>
     </div>
 </div>
 
-<form id="queueForm" method="POST" class="hidden">
-    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-    <input type="hidden" name="action" id="q_action">
-    <input type="hidden" name="id" id="q_id">
-</form>
-
 <script>
+function showToast(message, isError = false) {
+    const toast = document.getElementById('actionToast');
+    toast.textContent = message;
+    toast.className = `fixed bottom-4 right-4 px-4 py-2 rounded shadow-lg z-50 transition-opacity duration-300 ${isError ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`;
+    toast.classList.remove('hidden');
+    setTimeout(() => {
+        toast.classList.add('hidden');
+    }, 3000);
+}
+
+function escapeHtml(unsafe) {
+    if (!unsafe) return '';
+    return (unsafe + '').replace(/[&<"'>]/g, function (m) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+    });
+}
+
+function getStatusColor(status) {
+    if (status === 'PENDING') return 'text-blue-400';
+    if (status === 'PROCESSING') return 'text-purple-400';
+    if (status === 'COMPLETED') return 'text-green-400';
+    if (status === 'FAILED') return 'text-red-400';
+    if (status === 'DEAD') return 'text-slate-500';
+    if (status === 'CANCELLED') return 'text-slate-400';
+    return 'text-slate-400';
+}
+
+function renderTable(data) {
+    const tbody = document.getElementById('queueTableBody');
+    if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-slate-500">Kuyrukta kayıt bulunmuyor.</td></tr>';
+        return;
+    }
+    
+    let html = '';
+    data.forEach(a => {
+        const sColor = getStatusColor(a.status);
+        let actionButtons = '';
+        
+        if (['PENDING', 'PROCESSING'].includes(a.status)) {
+            actionButtons += `<button onclick="queueAction('cancel', ${a.id})" class="text-xs bg-slate-800 hover:bg-red-500/20 text-red-400 px-3 py-1 rounded border border-white/5 transition-colors mr-2">Cancel</button>`;
+        }
+        if (['FAILED', 'DEAD', 'PROCESSING'].includes(a.status)) {
+            actionButtons += `<button onclick="queueAction('retry', ${a.id})" class="text-xs bg-slate-800 hover:bg-blue-500/20 text-blue-400 px-3 py-1 rounded border border-white/5 transition-colors mr-2">Retry</button>`;
+        }
+        if (a.status === 'FAILED') {
+            actionButtons += `<button onclick="queueAction('mark_dead', ${a.id})" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1 rounded border border-white/5 transition-colors">Mark DEAD</button>`;
+        }
+        
+        const payloadSafe = escapeHtml(a.payload);
+        const errorSafe = escapeHtml(a.last_error);
+        
+        html += `<tr class="hover:bg-white/[0.02] transition-colors group">
+            <td class="p-4">
+                <div class="font-mono text-xs text-slate-500 mb-1">#${a.id}</div>
+                <div class="font-bold text-slate-200">${escapeHtml(a.action_type)}</div>
+                <div class="text-[10px] text-slate-500 truncate max-w-[200px]" title="${payloadSafe}">${payloadSafe}</div>
+            </td>
+            <td class="p-4 font-semibold ${sColor}">${a.status}</td>
+            <td class="p-4 text-sm text-slate-300">
+                <div>Retry: ${a.retry_count}/${a.max_retry}</div>
+                <div class="text-xs text-slate-500">Timeout: ${a.timeout_seconds}s</div>
+                ${a.last_error ? `<div class="text-[10px] text-red-400 truncate max-w-[150px]" title="${errorSafe}">${errorSafe}</div>` : ''}
+            </td>
+            <td class="p-4 text-xs text-slate-400">
+                <div>Oluşturulma: ${a.created_at}</div>
+                <div>Güncelleme: ${a.updated_at}</div>
+            </td>
+            <td class="p-4 text-right space-x-2">
+                ${actionButtons}
+            </td>
+        </tr>`;
+    });
+    
+    tbody.innerHTML = html;
+}
+
+function fetchQueue() {
+    let url = 'api/action_queue_list.php';
+    if (currentStatusFilter) {
+        url += '?status=' + encodeURIComponent(currentStatusFilter);
+    }
+    fetch(url)
+        .then(res => res.json())
+        .then(res => {
+            if (res.success) {
+                renderTable(res.data);
+            }
+        })
+        .catch(err => console.error("Fetch error:", err));
+}
+
 function queueAction(action, id) {
     if(action === 'cancel' && !confirm('Bu işlemi iptal etmek istediğinize emin misiniz?')) return;
-    document.getElementById('q_action').value = action;
-    document.getElementById('q_id').value = id;
-    document.getElementById('queueForm').submit();
+    
+    const formData = new FormData();
+    formData.append('action', action);
+    formData.append('id', id);
+    formData.append('csrf_token', csrfToken);
+    
+    fetch('api/action_queue_action.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => res.json())
+    .then(res => {
+        if (res.success) {
+            showToast(res.message);
+            fetchQueue();
+        } else {
+            showToast(res.message, true);
+        }
+    })
+    .catch(err => {
+        showToast("Bir hata oluştu", true);
+        console.error(err);
+    });
 }
+
+// Initial fetch & auto-refresh
+fetchQueue();
+setInterval(fetchQueue, 5000);
 </script>
 
 <?php render_footer(); ?>

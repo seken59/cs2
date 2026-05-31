@@ -2,7 +2,13 @@
 // panel/accounts.php
 require_once __DIR__ . '/layout.php';
 
-$accounts = $db->query("SELECT * FROM accounts ORDER BY id DESC")->fetchAll(PDO::FETCH_ASSOC);
+try {
+    $accounts = $db->query("SELECT * FROM accounts ORDER BY id DESC")->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    error_log("Accounts View Error: " . $e->getMessage());
+    $fatalError = "Modül yüklenemedi. Lütfen system_alerts ve PHP error loglarını kontrol edin.";
+    $accounts = [];
+}
 
 render_header('Hesap Envanteri');
 ?>
@@ -31,7 +37,9 @@ render_header('Hesap Envanteri');
                 </tr>
             </thead>
             <tbody class="divide-y divide-white/5">
-                <?php if (count($accounts) === 0): ?>
+                <?php if (isset($fatalError)): ?>
+                <tr><td colspan="5" class="p-8 text-center text-red-500 font-bold"><?= htmlspecialchars($fatalError) ?></td></tr>
+                <?php elseif (count($accounts) === 0): ?>
                 <tr><td colspan="5" class="p-8 text-center text-slate-500">Henüz hesap eklenmemiş.</td></tr>
                 <?php endif; ?>
                 

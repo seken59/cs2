@@ -22,12 +22,17 @@ if ($action === 'add_account') {
     }
 
     try {
+        $enc_pass = encrypt_secret($pass);
+        $enc_secret = encrypt_secret($secret);
+
         $stmt = $db->prepare("INSERT INTO accounts (username, password, shared_secret) VALUES (?, ?, ?)");
-        $stmt->execute([$user, $pass, $secret]);
+        $stmt->execute([$user, $enc_pass, $enc_secret]);
         audit_log('account_add', 'accounts', $db->lastInsertId(), ['username' => $user]);
-        echo json_encode(['success' => true]);
-    } catch (PDOException $e) {
-        if ($e->getCode() == 23000) {
+        echo json_encode(['success' => true, 'message' => 'Hesap başarıyla eklendi.']);
+    } catch (Throwable $e) {
+        error_log("AccountAdd Error: " . $e->getMessage());
+        // $e->getCode() returns string like '23000' for PDOException, but check it safely
+        if (isset($e->errorInfo) && $e->errorInfo[0] == '23000') {
             echo json_encode(['success' => false, 'message' => 'Bu kullanıcı adı zaten mevcut.']);
         } else {
             echo json_encode(['success' => false, 'message' => 'Veritabanı hatası.']);

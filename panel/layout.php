@@ -3,6 +3,8 @@
 require_once __DIR__ . '/core.php';
 
 function render_header($title = "Dashboard") {
+    global $currentPage;
+    $currentPage = $currentPage ?? '';
     $csrf = htmlspecialchars($_SESSION['csrf_token'] ?? '');
     echo <<<HTML
 <!DOCTYPE html>

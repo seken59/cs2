@@ -118,7 +118,12 @@ async function processQueue() {
                 return;
             }
 
-            await conn.query(`UPDATE action_queue SET status = 'PROCESSING', worker_id = ?, locked_until = DATE_ADD(NOW(), INTERVAL ? SECOND), updated_at = NOW() WHERE id = ?`, [WORKER_ID, task.timeout_seconds, task.id]);
+            // Log recovery if it was stalled
+            if (task.status === 'PROCESSING') {
+                console.log(`[WARN] Zombi Action tespit edildi ve kurtarıldı. ID: ${task.id}`);
+            }
+
+            await conn.query(`UPDATE action_queue SET status = 'PROCESSING', worker_id = ?, locked_until = DATE_ADD(NOW(), INTERVAL ? SECOND), updated_at = NOW() WHERE id = ?`, [WORKER_ID, task.timeout_seconds || 300, task.id]);
             await conn.commit();
             conn.release();
 
