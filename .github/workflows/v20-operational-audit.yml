@@ -1,0 +1,63 @@
+name: V20 Operational Audit
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ripgrep nodejs
+
+      - name: Git info
+        run: |
+          git rev-parse HEAD
+          git log -1 --oneline --decorate
+          git branch -vv
+
+      - name: Documentation tree
+        run: find docs -maxdepth 4 -type f | sort
+
+      - name: Empty doc check
+        run: |
+          ! rg -n "^# Otonom Doküman|Otonom Doküman|TODO|TBD|placeholder|lorem|dummy" docs/
+
+      - name: Governance scan
+        run: |
+          ! rg -n "VACnet|Trust Factor|bypass|evasion|undetected|human-like|ban risk|anti-cheat|anti-ban|griefing|boost|round trading|Steam Guard Bypass" .
+
+      - name: Failure recovery scenarios
+        run: |
+          rg -n "FR-001" docs/tests/failure_recovery.md
+          rg -n "FR-002" docs/tests/failure_recovery.md
+          rg -n "FR-003" docs/tests/failure_recovery.md
+          rg -n "FR-004" docs/tests/failure_recovery.md
+          rg -n "FR-005" docs/tests/failure_recovery.md
+          rg -n "FR-006" docs/tests/failure_recovery.md
+          rg -n "FR-007" docs/tests/failure_recovery.md
+          rg -n "FR-008" docs/tests/failure_recovery.md
+          rg -n "FR-009" docs/tests/failure_recovery.md
+          rg -n "FR-010" docs/tests/failure_recovery.md
+
+      - name: Test docs contain SQL and commands
+        run: |
+          rg -n "SELECT|UPDATE|INSERT|DELETE" docs/tests/ docs/runbooks/
+          rg -n "docker|systemctl|journalctl|df -h|free -h|du -sh|kill|mount|mysql|mysqldump" docs/tests/ docs/runbooks/
+
+      - name: Results template fields
+        run: |
+          rg -n "Test ID|Commit|Ortam|Amaç|Gerçek|DB çıktıları|Log çıktıları|Pass|Fail|Cleanup|Notlar" docs/tests/results/TEMPLATE.md
+
+      - name: Schema baseline
+        run: |
+          rg -n "CREATE TABLE|accounts|farm_batches|farm_batch_accounts|action_queue|system_alerts|worker_heartbeats|backup_runs|login_attempts|admin_users|admin_audit_log" migrations/ sql/
+
+      - name: JS syntax check
+        run: |
+          find . -name "*.js" -not -path "./node_modules/*" -print0 | xargs -0 -n1 node --check
