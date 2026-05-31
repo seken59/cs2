@@ -1,31 +1,55 @@
 <?php
-require_once 'core.php';
+require_once __DIR__ . '/core.php';
 $currentPage = 'revenue_report.php';
 
-// Fetch aggregations
-$thisWeek = $db->query("SELECT SUM(total_estimated_usd) FROM drop_events WHERE detected_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)")->fetchColumn();
-$thisMonth = $db->query("SELECT SUM(total_estimated_usd) FROM drop_events WHERE detected_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)")->fetchColumn();
+try {
+    // Fetch aggregations
+    $thisWeekSteam = $db->query("
+        SELECT SUM(di.steam_lowest_usd) 
+        FROM drop_events de
+        LEFT JOIN drop_items di ON de.id = di.drop_event_id
+        WHERE de.detected_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+    ")->fetchColumn();
+    
+    $thisWeekCash = $db->query("
+        SELECT SUM(di.cash_estimate_usd) 
+        FROM drop_events de
+        LEFT JOIN drop_items di ON de.id = di.drop_event_id
+        WHERE de.detected_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+    ")->fetchColumn();
 
-$topItems = $db->query("
-    SELECT di.market_hash_name, MAX(di.price_usd) as max_price, COUNT(di.id) as drop_count
-    FROM drop_items di
-    WHERE di.price_usd > 0
-    GROUP BY di.market_hash_name
-    ORDER BY max_price DESC
-    LIMIT 10
-")->fetchAll(PDO::FETCH_ASSOC);
+    $thisMonthSteam = $db->query("
+        SELECT SUM(di.steam_lowest_usd) 
+        FROM drop_events de
+        LEFT JOIN drop_items di ON de.id = di.drop_event_id
+        WHERE de.detected_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+    ")->fetchColumn();
 
-$topAccounts = $db->query("
-    SELECT de.username, SUM(de.total_estimated_usd) as total_earned, COUNT(de.id) as drop_count
-    FROM drop_events de
-    GROUP BY de.username
-    ORDER BY total_earned DESC
-    LIMIT 10
-")->fetchAll(PDO::FETCH_ASSOC);
+    $topItems = $db->query("
+        SELECT di.market_hash_name, MAX(di.steam_lowest_usd) as max_price, COUNT(di.id) as drop_count
+        FROM drop_items di
+        WHERE di.steam_lowest_usd > 0
+        GROUP BY di.market_hash_name
+        ORDER BY max_price DESC
+        LIMIT 10
+    ")->fetchAll(PDO::FETCH_ASSOC);
 
-$missingPriceCount = $db->query("
-    SELECT COUNT(*) FROM drop_items WHERE price_usd IS NULL OR price_usd = 0
-")->fetchColumn();
+    $topAccounts = $db->query("
+        SELECT de.username, SUM(de.total_estimated_usd) as total_earned, COUNT(de.id) as drop_count
+        FROM drop_events de
+        GROUP BY de.username
+        ORDER BY total_earned DESC
+        LIMIT 10
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    $missingPriceCount = $db->query("
+        SELECT COUNT(*) FROM drop_items WHERE csfloat_lowest_usd IS NULL AND steam_lowest_usd IS NULL
+    ")->fetchColumn();
+
+} catch (Exception $e) {
+    error_log("RevenueReport Error: " . $e->getMessage());
+    $fatalError = "Modül yüklenemedi. Lütfen system_alerts ve PHP error loglarını kontrol edin.";
+}
 
 render_header('Gelir Raporu');
 ?>
@@ -36,22 +60,36 @@ render_header('Gelir Raporu');
         <p class="text-slate-400 mt-1">Sistem genelindeki tahmini kazançlar ve drop değer analizleri.</p>
     </div>
 
+    <?php if(isset($fatalError)): ?>
+        <div class="bg-red-500/20 border border-red-500 text-red-300 p-4 rounded-xl mb-6">
+            <i class="fas fa-exclamation-triangle mr-2"></i> <?= htmlspecialchars($fatalError) ?>
+        </div>
+    <?php else: ?>
+
     <!-- Overview Cards -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div class="glass-panel p-5 rounded-2xl border border-white/5 relative overflow-hidden group">
             <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                <i class="fas fa-calendar-week text-6xl text-emerald-500"></i>
+                <i class="fab fa-steam text-6xl text-blue-500"></i>
             </div>
-            <div class="text-sm font-medium text-slate-400 mb-1">Bu Hafta (Tahmini)</div>
-            <div class="text-3xl font-black text-emerald-400">$<?= number_format($thisWeek ?: 0, 2) ?></div>
+            <div class="text-sm font-medium text-slate-400 mb-1">Bu Hafta (Steam)</div>
+            <div class="text-3xl font-black text-blue-400">$<?= number_format($thisWeekSteam ?: 0, 2) ?></div>
         </div>
         
         <div class="glass-panel p-5 rounded-2xl border border-white/5 relative overflow-hidden group">
             <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                <i class="fas fa-calendar-alt text-6xl text-emerald-500"></i>
+                <i class="fas fa-money-bill-wave text-6xl text-emerald-500"></i>
             </div>
-            <div class="text-sm font-medium text-slate-400 mb-1">Bu Ay (Tahmini)</div>
-            <div class="text-3xl font-black text-emerald-400">$<?= number_format($thisMonth ?: 0, 2) ?></div>
+            <div class="text-sm font-medium text-slate-400 mb-1">Bu Hafta (Cash)</div>
+            <div class="text-3xl font-black text-emerald-400">$<?= number_format($thisWeekCash ?: 0, 2) ?></div>
+        </div>
+
+        <div class="glass-panel p-5 rounded-2xl border border-white/5 relative overflow-hidden group">
+            <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                <i class="fas fa-calendar-alt text-6xl text-purple-500"></i>
+            </div>
+            <div class="text-sm font-medium text-slate-400 mb-1">Bu Ay (Steam)</div>
+            <div class="text-3xl font-black text-purple-400">$<?= number_format($thisMonthSteam ?: 0, 2) ?></div>
         </div>
 
         <div class="glass-panel p-5 rounded-2xl border border-white/5 relative overflow-hidden group">
@@ -113,7 +151,7 @@ render_header('Gelir Raporu');
                         </div>
                     </div>
                     <div class="font-bold text-emerald-400">
-                        $<?= number_format($item['max_price'], 2) ?>
+                        $<?= number_format($item['max_price'], 2) ?> <span class="text-xs text-slate-500 font-normal">Steam</span>
                     </div>
                 </div>
                 <?php endforeach; ?>
@@ -123,6 +161,8 @@ render_header('Gelir Raporu');
             </div>
         </div>
     </div>
+    
+    <?php endif; ?>
 </div>
 
 <?php render_footer(); ?>

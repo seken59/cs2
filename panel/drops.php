@@ -1,42 +1,51 @@
 <?php
-require_once 'core.php';
+require_once __DIR__ . '/core.php';
 $currentPage = 'drops.php';
 
-// Pagination and Filters
-$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-$perPage = 20;
-$offset = ($page - 1) * $perPage;
+try {
+    // Pagination and Filters
+    $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+    $perPage = 20;
+    $offset = ($page - 1) * $perPage;
 
-$search = isset($_GET['search']) ? trim($_GET['search']) : '';
-$whereClause = "WHERE 1=1";
-$params = [];
+    $search = isset($_GET['search']) ? trim($_GET['search']) : '';
+    $whereClause = "WHERE 1=1";
+    $params = [];
 
-if ($search !== '') {
-    $whereClause .= " AND (de.username LIKE :search OR di.market_hash_name LIKE :search)";
-    $params['search'] = "%$search%";
+    if ($search !== '') {
+        $whereClause .= " AND (de.username LIKE :search OR di.market_hash_name LIKE :search)";
+        $params['search'] = "%$search%";
+    }
+
+    $totalStmt = $db->prepare("
+        SELECT COUNT(*) 
+        FROM drop_events de
+        LEFT JOIN drop_items di ON de.id = di.drop_event_id
+        $whereClause
+    ");
+    $totalStmt->execute($params);
+    $total = $totalStmt->fetchColumn();
+    $pages = ceil($total / $perPage);
+
+    $stmt = $db->prepare("
+        SELECT de.id as event_id, de.username, de.detected_at, de.status as event_status, de.batch_id,
+               di.market_hash_name, di.exterior_tr, di.float_value, 
+               di.steam_lowest_usd, di.steam_median_usd, di.csfloat_lowest_usd, 
+               di.display_estimate_usd, di.cash_estimate_usd, di.price_source, di.price_confidence, di.id as item_id
+        FROM drop_events de
+        LEFT JOIN drop_items di ON de.id = di.drop_event_id
+        $whereClause
+        ORDER BY de.detected_at DESC
+        LIMIT " . (int)$perPage . " OFFSET " . (int)$offset . "
+    ");
+    $stmt->execute($params);
+    $drops = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+} catch (Exception $e) {
+    // Controlled error
+    error_log("Drops.php Error: " . $e->getMessage());
+    $fatalError = "Modül yüklenemedi. Lütfen system_alerts ve PHP error loglarını kontrol edin.";
 }
-
-$totalStmt = $db->prepare("
-    SELECT COUNT(*) 
-    FROM drop_events de
-    LEFT JOIN drop_items di ON de.id = di.drop_event_id
-    $whereClause
-");
-$totalStmt->execute($params);
-$total = $totalStmt->fetchColumn();
-$pages = ceil($total / $perPage);
-
-$stmt = $db->prepare("
-    SELECT de.id as event_id, de.username, de.detected_at, de.status as event_status, de.batch_id,
-           di.market_hash_name, di.exterior_tr, di.float_value, di.price_usd, di.price_source, di.id as item_id
-    FROM drop_events de
-    LEFT JOIN drop_items di ON de.id = di.drop_event_id
-    $whereClause
-    ORDER BY de.detected_at DESC
-    LIMIT $perPage OFFSET $offset
-");
-$stmt->execute($params);
-$drops = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 render_header('Drop Geçmişi');
 ?>
@@ -49,7 +58,7 @@ render_header('Drop Geçmişi');
         </div>
         <div class="flex space-x-3">
             <form method="GET" class="flex space-x-2">
-                <input type="text" name="search" value="<?= htmlspecialchars($search) ?>" placeholder="Hesap veya Item Ara..." class="bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500">
+                <input type="text" name="search" value="<?= htmlspecialchars($search ?? '') ?>" placeholder="Hesap veya Item Ara..." class="bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500">
                 <button type="submit" class="bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 px-4 py-2 rounded-lg hover:bg-emerald-600/40 transition-colors text-sm font-medium">
                     <i class="fas fa-search mr-2"></i> Ara
                 </button>
@@ -57,23 +66,30 @@ render_header('Drop Geçmişi');
         </div>
     </div>
 
+    <?php if(isset($fatalError)): ?>
+        <div class="bg-red-500/20 border border-red-500 text-red-300 p-4 rounded-xl mb-6">
+            <i class="fas fa-exclamation-triangle mr-2"></i> <?= htmlspecialchars($fatalError) ?>
+        </div>
+    <?php else: ?>
+
     <div class="glass-panel rounded-2xl overflow-hidden border border-white/5">
         <div class="overflow-x-auto">
             <table class="w-full text-left text-sm">
                 <thead class="bg-white/5 text-slate-300">
                     <tr>
-                        <th class="px-6 py-4 font-semibold">Tarih</th>
-                        <th class="px-6 py-4 font-semibold">Hesap</th>
-                        <th class="px-6 py-4 font-semibold">Item</th>
-                        <th class="px-6 py-4 font-semibold">Özellikler</th>
-                        <th class="px-6 py-4 font-semibold">Fiyat (USD)</th>
-                        <th class="px-6 py-4 font-semibold">Durum</th>
+                        <th class="px-4 py-4 font-semibold">Tarih</th>
+                        <th class="px-4 py-4 font-semibold">Hesap / Batch</th>
+                        <th class="px-4 py-4 font-semibold">Item & Özellikler</th>
+                        <th class="px-4 py-4 font-semibold">Steam</th>
+                        <th class="px-4 py-4 font-semibold">CSFloat</th>
+                        <th class="px-4 py-4 font-semibold">Estimate</th>
+                        <th class="px-4 py-4 font-semibold">Durum</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-white/5">
                     <?php if (count($drops) === 0): ?>
                     <tr>
-                        <td colspan="6" class="px-6 py-8 text-center text-slate-400">
+                        <td colspan="7" class="px-6 py-8 text-center text-slate-400">
                             Henüz drop kaydı bulunmuyor.
                         </td>
                     </tr>
@@ -81,37 +97,61 @@ render_header('Drop Geçmişi');
                     
                     <?php foreach($drops as $drop): ?>
                     <tr class="hover:bg-white/5 transition-colors group">
-                        <td class="px-6 py-4 text-slate-400">
+                        <td class="px-4 py-4 text-slate-400">
                             <?= date('Y-m-d H:i', strtotime($drop['detected_at'])) ?>
                         </td>
-                        <td class="px-6 py-4 font-medium">
-                            <a href="account_details.php?username=<?= urlencode($drop['username']) ?>" class="hover:text-emerald-400 transition-colors">
+                        <td class="px-4 py-4 font-medium">
+                            <a href="account_details.php?username=<?= urlencode($drop['username']) ?>" class="hover:text-emerald-400 transition-colors block">
                                 <?= htmlspecialchars($drop['username']) ?>
                             </a>
-                        </td>
-                        <td class="px-6 py-4">
-                            <div class="font-bold text-white"><?= htmlspecialchars($drop['market_hash_name'] ?? 'Bilinmeyen Item') ?></div>
                             <?php if($drop['batch_id']): ?>
                                 <div class="text-[10px] text-slate-500 mt-1"><i class="fas fa-layer-group"></i> <?= htmlspecialchars($drop['batch_id']) ?></div>
                             <?php endif; ?>
                         </td>
-                        <td class="px-6 py-4">
-                            <?php if($drop['exterior_tr']): ?>
-                                <div class="text-xs text-slate-300 mb-1"><span class="text-slate-500">D:</span> <?= htmlspecialchars($drop['exterior_tr']) ?></div>
-                            <?php endif; ?>
-                            <?php if($drop['float_value']): ?>
-                                <div class="text-xs text-slate-300"><span class="text-slate-500">A:</span> <?= number_format($drop['float_value'], 9) ?></div>
-                            <?php endif; ?>
+                        <td class="px-4 py-4">
+                            <div class="font-bold text-white"><?= htmlspecialchars($drop['market_hash_name'] ?? 'Bilinmeyen Item') ?></div>
+                            <div class="flex space-x-2 mt-1">
+                                <?php if($drop['exterior_tr']): ?>
+                                    <div class="text-[10px] text-slate-300"><span class="text-slate-500">D:</span> <?= htmlspecialchars($drop['exterior_tr']) ?></div>
+                                <?php endif; ?>
+                                <?php if($drop['float_value']): ?>
+                                    <div class="text-[10px] text-slate-300"><span class="text-slate-500">A:</span> <?= number_format($drop['float_value'], 9) ?></div>
+                                <?php endif; ?>
+                            </div>
                         </td>
-                        <td class="px-6 py-4">
-                            <?php if($drop['price_usd']): ?>
-                                <div class="font-bold text-emerald-400">$<?= number_format($drop['price_usd'], 2) ?></div>
-                                <div class="text-[10px] text-slate-500"><?= htmlspecialchars($drop['price_source']) ?></div>
-                            <?php else: ?>
-                                <span class="text-slate-500 text-xs italic">Bilinmiyor</span>
-                            <?php endif; ?>
+                        <td class="px-4 py-4">
+                            <div class="text-xs">
+                                <?php if($drop['steam_lowest_usd']): ?>
+                                    L: <span class="text-emerald-400">$<?= number_format($drop['steam_lowest_usd'], 2) ?></span><br>
+                                <?php endif; ?>
+                                <?php if($drop['steam_median_usd']): ?>
+                                    M: <span class="text-emerald-400">$<?= number_format($drop['steam_median_usd'], 2) ?></span>
+                                <?php endif; ?>
+                            </div>
                         </td>
-                        <td class="px-6 py-4">
+                        <td class="px-4 py-4">
+                            <div class="text-xs">
+                                <?php if($drop['csfloat_lowest_usd']): ?>
+                                    L: <span class="text-emerald-400">$<?= number_format($drop['csfloat_lowest_usd'], 2) ?></span>
+                                <?php else: ?>
+                                    <span class="text-slate-500 italic">UNKNOWN</span>
+                                <?php endif; ?>
+                            </div>
+                        </td>
+                        <td class="px-4 py-4">
+                            <div class="text-xs">
+                                <?php if($drop['display_estimate_usd']): ?>
+                                    Disp: <span class="font-bold text-emerald-400">$<?= number_format($drop['display_estimate_usd'], 2) ?></span><br>
+                                <?php endif; ?>
+                                <?php if($drop['cash_estimate_usd']): ?>
+                                    Cash: <span class="text-emerald-400">$<?= number_format($drop['cash_estimate_usd'], 2) ?></span>
+                                <?php endif; ?>
+                                <?php if($drop['price_source']): ?>
+                                    <div class="text-[10px] text-slate-500 mt-1"><?= htmlspecialchars($drop['price_source']) ?> (<?= htmlspecialchars($drop['price_confidence']) ?>)</div>
+                                <?php endif; ?>
+                            </div>
+                        </td>
+                        <td class="px-4 py-4">
                             <?php if($drop['event_status'] === 'DETECTED'): ?>
                                 <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 rounded text-xs border border-yellow-500/30">Tespit Edildi</span>
                             <?php elseif($drop['event_status'] === 'VALUED'): ?>
@@ -141,6 +181,8 @@ render_header('Drop Geçmişi');
         </div>
         <?php endif; ?>
     </div>
+    
+    <?php endif; ?>
 </div>
 
 <?php render_footer(); ?>
