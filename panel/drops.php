@@ -41,7 +41,7 @@ try {
     $stmt->execute($params);
     $drops = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     // Controlled error
     error_log("Drops.php Error: " . $e->getMessage());
     $fatalError = "Modül yüklenemedi. Lütfen system_alerts ve PHP error loglarını kontrol edin.";

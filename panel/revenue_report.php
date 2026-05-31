@@ -46,7 +46,7 @@ try {
         SELECT COUNT(*) FROM drop_items WHERE csfloat_lowest_usd IS NULL AND steam_lowest_usd IS NULL
     ")->fetchColumn();
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     error_log("RevenueReport Error: " . $e->getMessage());
     $fatalError = "Modül yüklenemedi. Lütfen system_alerts ve PHP error loglarını kontrol edin.";
 }

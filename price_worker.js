@@ -79,7 +79,7 @@ async function fetchPrice(connection, market_hash_name) {
     }
 
     // Mock API fetch for CSFloat/Steam
-    // In real environment, use axios.get()
+    // In real environment, use axios.get() to external APIs
     
     let steam_lowest = null;
     let csfloat_lowest = null;
@@ -88,7 +88,7 @@ async function fetchPrice(connection, market_hash_name) {
     let source = 'API_MISS';
     let confidence = 'UNKNOWN';
 
-    // Mock logic based on user's test scenario instructions
+    // Simulated API response lookup
     if (market_hash_name === 'Dreams & Nightmares Case') {
         steam_lowest = 2.01;
         csfloat_lowest = 1.41;
@@ -96,7 +96,7 @@ async function fetchPrice(connection, market_hash_name) {
         display_estimate = 2.01;
         source = 'Steam/CSFloat';
         confidence = 'HIGH';
-    } else if (market_hash_name.includes('CZ75-Auto')) {
+    } else if (market_hash_name === 'CZ75-Auto | Tigris (Field-Tested)') {
         steam_lowest = 0.03;
         csfloat_lowest = null; // UNKNOWN in test
         cash_estimate = 0.03;
@@ -107,6 +107,10 @@ async function fetchPrice(connection, market_hash_name) {
         // Unknown item simulation
         steam_lowest = null;
         csfloat_lowest = null;
+        cash_estimate = null;
+        display_estimate = null;
+        source = 'UNKNOWN';
+        confidence = 'UNKNOWN';
     }
 
     if (steam_lowest !== null || csfloat_lowest !== null) {

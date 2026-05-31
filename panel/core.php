@@ -272,5 +272,5 @@ try {
             ('backup_enabled', '1', 'Yedekleme aktif mi')
         ");
     }
-} catch (Exception $e) {}
+} catch (Throwable $e) {}
 ?>

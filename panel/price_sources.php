@@ -39,7 +39,7 @@ try {
         ORDER BY id DESC LIMIT 1
     ")->fetch(PDO::FETCH_ASSOC);
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     error_log("PriceSources Error: " . $e->getMessage());
     $fatalError = "Modül yüklenemedi. Lütfen system_alerts ve PHP error loglarını kontrol edin.";
 }
