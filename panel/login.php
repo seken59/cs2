@@ -13,7 +13,7 @@ if (!file_exists($configPath)) {
 require_once $configPath;
 
 // IP Whitelist (DB'den çekilecek)
-$ENABLE_IP_CHECK = true;
+$ENABLE_IP_CHECK = false;
 
 try {
     // $db config.php icinden geliyor olmali
@@ -100,7 +100,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KO-LMS | Secure Login</title>
+    <title>Dragle | Secure Login</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background-color: #0f172a; color: #f8fafc; }
@@ -113,7 +113,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 </head>
 <body class="min-h-screen flex items-center justify-center">
     <div class="glass-panel p-8 rounded-2xl shadow-2xl w-full max-w-md">
-        <h1 class="text-3xl font-bold mb-6 text-center text-blue-400">KO-LMS <span class="text-white text-lg font-light">Secure</span></h1>
+        <h1 class="text-3xl font-bold mb-6 text-center text-blue-400">Dragle <span class="text-white text-lg font-light">Secure</span></h1>
         
         <?php if($error): ?>
             <div class="bg-red-500/20 border border-red-500 text-red-300 p-3 rounded mb-4 text-sm text-center">
