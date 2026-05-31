@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/core.php';
+require_once __DIR__ . '/layout.php';
 $currentPage = 'revenue_report.php';
 
 try {
@@ -166,3 +167,4 @@ render_header('Gelir Raporu');
 </div>
 
 <?php render_footer(); ?>
+

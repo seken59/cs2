@@ -81,14 +81,18 @@ async function fetchPrice(connection, market_hash_name) {
     // Mock API fetch for CSFloat/Steam
     // In real environment, use axios.get() to external APIs
     
+    // Simulated API response lookup
+    if (!market_hash_name) {
+        return { source: 'UNKNOWN', confidence: 'UNKNOWN', steam_lowest: null, csfloat_lowest: null, cash_estimate: null, display_estimate: null };
+    }
+    
     let steam_lowest = null;
     let csfloat_lowest = null;
     let cash_estimate = null;
     let display_estimate = null;
-    let source = 'API_MISS';
+    let source = 'UNKNOWN';
     let confidence = 'UNKNOWN';
 
-    // Simulated API response lookup
     if (market_hash_name === 'Dreams & Nightmares Case') {
         steam_lowest = 2.01;
         csfloat_lowest = 1.41;
@@ -98,19 +102,11 @@ async function fetchPrice(connection, market_hash_name) {
         confidence = 'HIGH';
     } else if (market_hash_name === 'CZ75-Auto | Tigris (Field-Tested)') {
         steam_lowest = 0.03;
-        csfloat_lowest = null; // UNKNOWN in test
+        csfloat_lowest = null;
         cash_estimate = 0.03;
         display_estimate = 0.03;
         source = 'Steam Market';
         confidence = 'MEDIUM';
-    } else {
-        // Unknown item simulation
-        steam_lowest = null;
-        csfloat_lowest = null;
-        cash_estimate = null;
-        display_estimate = null;
-        source = 'UNKNOWN';
-        confidence = 'UNKNOWN';
     }
 
     if (steam_lowest !== null || csfloat_lowest !== null) {
@@ -238,21 +234,25 @@ async function processQueue() {
                             await connection.query(`UPDATE drop_events SET total_estimated_usd = ?, status = 'VALUED', valued_at = NOW() WHERE id = ?`, [totalCashUsd, payload.drop_event_id]);
                             
                             // Send Telegram Notification
-                            let tgMsg = `🎁 <b>Drop Kaydı</b>\n`;
-                            tgMsg += `Hesap: ${eventRow.username}\n`;
-                            if (msgItems.length > 0) {
-                                let i = msgItems[0];
-                                tgMsg += `Item: ${i.name}\n`;
-                                if (i.ext) tgMsg += `D: ${i.ext}\n`;
-                                if (i.float) tgMsg += `A: ${i.float}\n`;
-                                tgMsg += `Steam: ${i.steam !== null ? '$'+i.steam : 'UNKNOWN'}\n`;
-                                tgMsg += `CSFloat: ${i.csfloat !== null ? '$'+i.csfloat : 'UNKNOWN'}\n`;
-                                tgMsg += `Kaynak: ${i.source}\n`;
+                            if (eventRow.event_type !== 'MANUAL_TEST' && eventRow.source !== 'TEST') {
+                                let tgMsg = `🎁 <b>Drop Kaydı</b>\n`;
+                                tgMsg += `Hesap: ${eventRow.username}\n`;
+                                if (msgItems.length > 0) {
+                                    let i = msgItems[0];
+                                    tgMsg += `Item: ${i.name}\n`;
+                                    if (i.ext) tgMsg += `D: ${i.ext}\n`;
+                                    if (i.float) tgMsg += `A: ${i.float}\n`;
+                                    tgMsg += `Steam: ${i.steam !== null ? '$'+i.steam : 'UNKNOWN'}\n`;
+                                    tgMsg += `CSFloat: ${i.csfloat !== null ? '$'+i.csfloat : 'UNKNOWN'}\n`;
+                                    tgMsg += `Kaynak: ${i.source}\n`;
+                                }
+                                if (eventRow.batch_id) tgMsg += `Batch: ${eventRow.batch_id}\n`;
+                                tgMsg += `Zaman: ${new Date().toISOString()}`;
+                                
+                                await sendTelegram(tgMsg);
+                            } else {
+                                console.log(`[INFO] Test event ignored for Telegram: ${eventRow.id}`);
                             }
-                            if (eventRow.batch_id) tgMsg += `Batch: ${eventRow.batch_id}\n`;
-                            tgMsg += `Zaman: ${new Date().toISOString()}`;
-                            
-                            await sendTelegram(tgMsg);
                         }
                         await markActionCompleted(connection, task.id, 'Drop event valued and notified');
                         break;

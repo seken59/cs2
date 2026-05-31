@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/core.php';
+require_once __DIR__ . '/layout.php';
 $currentPage = 'drops.php';
 
 try {
@@ -186,3 +187,4 @@ render_header('Drop Geçmişi');
 </div>
 
 <?php render_footer(); ?>
+

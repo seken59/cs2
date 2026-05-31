@@ -1,6 +1,7 @@
 <?php
 // panel/action_queue.php
 require_once __DIR__ . '/core.php';
+require_once __DIR__ . '/layout.php';
 
 try {
     // Basic init or setup if needed
@@ -178,3 +179,4 @@ setInterval(fetchQueue, 5000);
 </script>
 
 <?php render_footer(); ?>
+

@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/core.php';
+require_once __DIR__ . '/layout.php';
 $currentPage = 'price_sources.php';
 
 try {
@@ -172,3 +173,4 @@ render_header('Fiyat Kaynakları');
 </div>
 
 <?php render_footer(); ?>
+

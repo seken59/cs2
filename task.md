@@ -12,3 +12,16 @@
 - `[x]` master/scheduler.js (Çarşamba günleri drop haklarını sıfırlama) eklentisi
 - `[x]` panel/ajax.php (Batch iptal veya durdurma komutları için API) yazılması
 - `[x]` bot/macro_engine.js (Input Automation simülasyonu) yazılması
+- `[x]` V24 Hatalarının Tespiti ve Giderilmesi (AŞAMA 1-7)
+  - `[x]` Veritabanı ve PDO / Node.js charsetlerinin utf8mb4_unicode_ci yapılması (Telegram Türkçe Karakter Sorunu)
+  - `[x]` Panel sayfalarında (drops.php, revenue_report.php, price_sources.php) hata denetimlerinin iyileştirilmesi ve 500 hatalarının önlenmesi
+  - `[x]` Action Queue yönetiminde AJAX yapısının kurulması, sayfayı yenilemeden işlemlerin yapılması (Cancel, Retry, vb.) ve otomatik yenileme (Auto-refresh) eklenmesi
+  - `[x]` Action Queue tablosunda status değerine `CANCELLED` ENUM'unun eklenmesi
+  - `[x]` `accounts.php` üzerinden hesap eklemedeki "Veritabanı Hatası" düzeltimi, DB şemasına gerekli alanların (shared_secret, identity_secret, proxy) eklenmesi ve AES-256-GCM ile şifrelenmesi
+  - `[x]` Worker'ların sıkışmış (PROCESSING) Action Queue görevlerini tekrar alıp işleyebilmesi için `locked_until` değerlerinin onarılması
+  - `[x]` Panel / Worker kodlarının canlı sunucuya aktarılması ve PM2 ile yeniden başlatılması
+- `[x]` V25 - Yeni Özellikler ve İyileştirmeler
+  - `[x]` Worker-Panel iletişiminde Webhook/Socket optimizasyonu
+  - `[x]` Proxy rotasyon mekanizmasının iyileştirilmesi
+  - `[x]` Otomatik drop takibi ve envanter yönetimi modülünün güncellenmesi
+  - `[x]` Günlük gelir/gider raporlama sisteminin otomatize edilmesi

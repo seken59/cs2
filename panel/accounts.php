@@ -1,5 +1,6 @@
 <?php
 // panel/accounts.php
+require_once __DIR__ . '/core.php';
 require_once __DIR__ . '/layout.php';
 
 try {
@@ -171,3 +172,4 @@ render_header('Hesap Envanteri');
 </script>
 
 <?php render_footer(); ?>
+
