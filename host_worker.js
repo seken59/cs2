@@ -18,9 +18,24 @@ if (!DATABASE_IP || !DATABASE_USR || !DATABASE_PWD || !DB_NAME) {
 const WORKER_ID = 'host_worker_' + Math.floor(Math.random()*10000);
 const botTelegram = TG_BOT_TOKEN ? new TelegramBot(TG_BOT_TOKEN, { polling: false }) : null;
 
-function sendTelegram(message) {
+async function getSystemSetting(connection, key, defaultValue = '0') {
+    const [rows] = await connection.query(`SELECT setting_value FROM system_settings WHERE setting_key = ?`, [key]);
+    if (rows.length > 0) return rows[0].setting_value;
+    return defaultValue;
+}
+
+async function sendTelegram(connection, message) {
     if (botTelegram && CHAT_ID) {
-        botTelegram.sendMessage(CHAT_ID, message).catch(console.error);
+        try {
+            const isEnabled = await getSystemSetting(connection, 'telegram_notifications', '1');
+            if (isEnabled === '1' || isEnabled === 'true') {
+                await botTelegram.sendMessage(CHAT_ID, message);
+            } else {
+                console.log('[TELEGRAM] Notifications are disabled in system_settings.');
+            }
+        } catch (e) {
+            console.error('[TELEGRAM ERROR]', e.message);
+        }
     }
 }
 
@@ -39,7 +54,7 @@ async function checkSystemHealth(db) {
 
         if (ramWarning) {
             await db.query(`INSERT INTO system_alerts (severity, alert_type, message, created_at) VALUES ('WARNING', 'HIGH_RAM', 'RAM kullanımı %85 i aştı', NOW())`);
-            sendTelegram('[ALARM] RAM Kullanımı %85 üzerinde!');
+            await sendTelegram(db, '[ALARM] RAM Kullanımı %85 üzerinde!');
         }
         const [existing] = await db.query(`SELECT id FROM worker_heartbeats WHERE worker_name='host_worker' LIMIT 1`);
         if(existing.length > 0) {
@@ -93,7 +108,7 @@ async function processQueue() {
 
         const [staleTasks] = await db.query(`SELECT id, action_type FROM action_queue WHERE status = 'PENDING' AND created_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)`);
         if(staleTasks.length > 0) {
-            sendTelegram(`[ALARM] Action Queue Sıkıştı! ${staleTasks.length} adet işlem 5 dakikadan uzun süredir PENDING durumunda.`);
+            await sendTelegram(db, `[ALARM] Action Queue Sıkıştı! ${staleTasks.length} adet işlem 5 dakikadan uzun süredir PENDING durumunda.`);
         }
 
         const conn = await db.getConnection();
