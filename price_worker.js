@@ -24,10 +24,22 @@ if (CHAT_ID && isNaN(CHAT_ID) && !CHAT_ID.startsWith('@')) {
 const WORKER_ID = 'price_worker_' + Math.floor(Math.random() * 10000);
 const botTelegram = TG_BOT_TOKEN ? new TelegramBot(TG_BOT_TOKEN, { polling: false }) : null;
 
-async function sendTelegram(message) {
+async function getSystemSetting(connection, key, defaultValue = '0') {
+    const [rows] = await connection.query(`SELECT setting_value FROM system_settings WHERE setting_key = ?`, [key]);
+    if (rows.length > 0) return rows[0].setting_value;
+    return defaultValue;
+}
+
+async function sendTelegram(connection, message) {
     if (botTelegram && CHAT_ID) {
         try {
-            await botTelegram.sendMessage(CHAT_ID, message, { parse_mode: 'HTML' });
+            // Sadece bildirimler açıksa gönder
+            const isEnabled = await getSystemSetting(connection, 'telegram_notifications', '1');
+            if (isEnabled === '1' || isEnabled === 'true') {
+                await botTelegram.sendMessage(CHAT_ID, message, { parse_mode: 'HTML' });
+            } else {
+                console.log('[TELEGRAM] Notifications are disabled in system_settings.');
+            }
         } catch (e) {
             console.error('[TELEGRAM ERROR]', e.message);
             throw new Error('Telegram send failed: ' + e.message);
@@ -249,7 +261,7 @@ async function processQueue() {
                                 if (eventRow.batch_id) tgMsg += `Batch: ${eventRow.batch_id}\n`;
                                 tgMsg += `Zaman: ${new Date().toISOString()}`;
                                 
-                                await sendTelegram(tgMsg);
+                                await sendTelegram(connection, tgMsg);
                             } else {
                                 console.log(`[INFO] Test event ignored for Telegram: ${eventRow.id}`);
                             }
@@ -258,7 +270,7 @@ async function processQueue() {
                         break;
                     case 'SEND_TELEGRAM_TEST':
                         const commitHash = "V24_TEST";
-                        await sendTelegram(`KO-LMS Telegram test successful. Commit: ${commitHash}. Time: ${new Date().toISOString()}.`);
+                        await sendTelegram(connection, `KO-LMS Telegram test successful. Commit: ${commitHash}. Time: ${new Date().toISOString()}.`);
                         await markActionCompleted(connection, task.id, 'Telegram test sent');
                         break;
                     case 'GENERATE_WEEKLY_REVENUE_REPORT':
@@ -271,7 +283,7 @@ async function processQueue() {
                         let reportMsg = `📊 <b>Haftalık Drop Özeti</b>\n`;
                         reportMsg += `Drop alan hesap: ${stats[0].total_acc}\n`;
                         reportMsg += `Toplam cash değeri: $${stats[0].total_usd ? parseFloat(stats[0].total_usd).toFixed(2) : '0.00'}\n`;
-                        await sendTelegram(reportMsg);
+                        await sendTelegram(connection, reportMsg);
                         await markActionCompleted(connection, task.id, 'Report generated');
                         break;
                     default:
