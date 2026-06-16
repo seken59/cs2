@@ -5,6 +5,25 @@ require_once __DIR__ . '/layout.php';
 // Check if POST
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
+    
+    // AJAX Tekli Guncelleme Icin
+    if ($action === 'update_single_setting') {
+        header('Content-Type: application/json');
+        $key = $_POST['key'] ?? '';
+        $value = $_POST['value'] ?? '';
+        
+        if ($key) {
+            $stmt = $db->prepare("UPDATE system_settings SET setting_value = ?, last_updated_by = ?, updated_at = NOW() WHERE setting_key = ?");
+            $stmt->execute([$value, $_SESSION['admin_username'] ?? 'admin', $key]);
+            audit_log('settings_update_single', 'system_settings', null, [$key => $value]);
+            echo json_encode(['success' => true, 'message' => 'Ayar kaydedildi.']);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Geçersiz parametre.']);
+        }
+        exit;
+    }
+
+    // Toplu Guncelleme Icin
     if ($action === 'update_settings') {
         // Toggle (checkbox) formlarinda, secili olmayan checkboxlar POST edilmez.
         // Veritabanindaki tum ayarlari cekip, eger POST'ta yoksa ve boolean bir alansa 0 yapmaliyiz.
@@ -94,14 +113,14 @@ render_header('Sistem Ayarları');
                                 <div class="w-full md:w-auto min-w-[200px]">
                                     <?php if($isBoolean): ?>
                                         <label class="relative inline-flex items-center cursor-pointer">
-                                            <input type="checkbox" name="settings[<?= htmlspecialchars($key) ?>]" value="1" <?= $val == '1' ? 'checked' : '' ?> class="sr-only peer">
+                                            <input type="checkbox" name="settings[<?= htmlspecialchars($key) ?>]" data-key="<?= htmlspecialchars($key) ?>" value="1" <?= $val == '1' ? 'checked' : '' ?> class="sr-only peer auto-save-input">
                                             <div class="w-14 h-7 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-primary"></div>
-                                            <span class="ml-3 text-sm font-medium text-slate-300 peer-checked:text-primary transition-colors">
+                                            <span class="ml-3 text-sm font-medium text-slate-300 peer-checked:text-primary transition-colors toggle-label">
                                                 <?= $val == '1' ? 'Açık' : 'Kapalı' ?>
                                             </span>
                                         </label>
                                     <?php else: ?>
-                                        <input type="text" name="settings[<?= htmlspecialchars($key) ?>]" value="<?= htmlspecialchars($val) ?>" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-primary transition-colors text-sm">
+                                        <input type="text" name="settings[<?= htmlspecialchars($key) ?>]" data-key="<?= htmlspecialchars($key) ?>" value="<?= htmlspecialchars($val) ?>" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-primary transition-colors text-sm auto-save-input">
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -111,12 +130,95 @@ render_header('Sistem Ayarları');
             <?php endforeach; ?>
         </div>
 
-        <div class="mt-8 flex justify-end sticky bottom-6 z-10">
+        <div class="mt-8 flex justify-end sticky bottom-6 z-10 hidden">
             <button type="submit" class="bg-gradient-to-r from-primary to-blue-600 hover:from-blue-600 hover:to-primary text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg shadow-primary/20 flex items-center gap-2 w-full md:w-auto justify-center">
                 <i class="fas fa-save"></i> Ayarları Kaydet ve Uygula
             </button>
         </div>
     </form>
 </div>
+
+<!-- Toast Bildirim Container -->
+<div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2"></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const inputs = document.querySelectorAll('.auto-save-input');
+    let timeoutId;
+
+    inputs.forEach(input => {
+        input.addEventListener('change', (e) => {
+            const key = e.target.getAttribute('data-key');
+            let value = e.target.value;
+
+            if (e.target.type === 'checkbox') {
+                value = e.target.checked ? '1' : '0';
+                // Toggle etiketini güncelle
+                const labelSpan = e.target.parentElement.querySelector('.toggle-label');
+                if (labelSpan) {
+                    labelSpan.textContent = e.target.checked ? 'Açık' : 'Kapalı';
+                }
+            }
+
+            // Text inputlar için debounce uygula (yazarken sürekli istek atmasın)
+            if (e.target.type === 'text') {
+                clearTimeout(timeoutId);
+                timeoutId = setTimeout(() => {
+                    saveSetting(key, value);
+                }, 800); // 800ms bekle
+            } else {
+                saveSetting(key, value);
+            }
+        });
+    });
+
+    function saveSetting(key, value) {
+        const formData = new FormData();
+        formData.append('action', 'update_single_setting');
+        formData.append('csrf_token', document.querySelector('input[name="csrf_token"]').value);
+        formData.append('key', key);
+        formData.append('value', value);
+
+        fetch('settings.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if(data.success) {
+                showToast(key + ' ayarı güncellendi!', 'success');
+            } else {
+                showToast('Hata: ' + data.message, 'error');
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            showToast('Sunucu ile bağlantı kurulamadı.', 'error');
+        });
+    }
+
+    function showToast(message, type) {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = `px-4 py-3 rounded-lg shadow-lg text-sm text-white transform transition-all duration-300 translate-y-10 opacity-0 flex items-center gap-2 ${type === 'success' ? 'bg-green-600/90 border border-green-500' : 'bg-red-600/90 border border-red-500'}`;
+        
+        const icon = type === 'success' ? '<i class="fas fa-check-circle"></i>' : '<i class="fas fa-exclamation-circle"></i>';
+        toast.innerHTML = `${icon} <span>${message}</span>`;
+        
+        container.appendChild(toast);
+        
+        // Animasyonla göster
+        setTimeout(() => {
+            toast.classList.remove('translate-y-10', 'opacity-0');
+        }, 10);
+
+        // 3 saniye sonra kaybet
+        setTimeout(() => {
+            toast.classList.add('opacity-0', 'translate-y-2');
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+});
+</script>
 
 <?php render_footer(); ?>
