@@ -62,6 +62,17 @@ $groups = [
     'Performans & Çalışma' => ['batch_size', 'max_parallel_batches', 'backup_enabled']
 ];
 
+$titleMap = [
+    'allowed_ips' => 'İzin Verilen IP Adresleri',
+    'maintenance_mode' => 'Bakım Modu',
+    'telegram_notifications' => 'Telegram Bildirimleri',
+    'auto_retry_failed_actions' => 'Otomatik Yeniden Deneme',
+    'max_action_retries' => 'Maksimum Deneme Sayısı',
+    'batch_size' => 'Batch Boyutu',
+    'max_parallel_batches' => 'Maksimum Paralel Batch',
+    'backup_enabled' => 'Sistem Yedekleme'
+];
+
 render_header('Sistem Ayarları');
 ?>
 
@@ -94,7 +105,7 @@ render_header('Sistem Ayarları');
                             $setting = $settings[$key];
                             $isBoolean = (strpos($key, '_enabled') !== false || strpos($key, '_mode') !== false || strpos($key, '_notifications') !== false || strpos($key, 'auto_') !== false);
                             $val = $setting['setting_value'];
-                            $title = ucwords(str_replace('_', ' ', $key));
+                            $title = $titleMap[$key] ?? ucwords(str_replace('_', ' ', $key));
                         ?>
                             <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-white/5 rounded-xl border border-white/5 hover:bg-white/[0.07] transition-colors">
                                 <div class="flex-1">
@@ -113,14 +124,14 @@ render_header('Sistem Ayarları');
                                 <div class="w-full md:w-auto min-w-[200px]">
                                     <?php if($isBoolean): ?>
                                         <label class="relative inline-flex items-center cursor-pointer">
-                                            <input type="checkbox" name="settings[<?= htmlspecialchars($key) ?>]" data-key="<?= htmlspecialchars($key) ?>" value="1" <?= $val == '1' ? 'checked' : '' ?> class="sr-only peer auto-save-input">
+                                            <input type="checkbox" name="settings[<?= htmlspecialchars($key) ?>]" data-key="<?= htmlspecialchars($key) ?>" data-title="<?= htmlspecialchars($title) ?>" value="1" <?= $val == '1' ? 'checked' : '' ?> class="sr-only peer auto-save-input">
                                             <div class="w-14 h-7 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-primary"></div>
                                             <span class="ml-3 text-sm font-medium text-slate-300 peer-checked:text-primary transition-colors toggle-label">
                                                 <?= $val == '1' ? 'Açık' : 'Kapalı' ?>
                                             </span>
                                         </label>
                                     <?php else: ?>
-                                        <input type="text" name="settings[<?= htmlspecialchars($key) ?>]" data-key="<?= htmlspecialchars($key) ?>" value="<?= htmlspecialchars($val) ?>" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-primary transition-colors text-sm auto-save-input">
+                                        <input type="text" name="settings[<?= htmlspecialchars($key) ?>]" data-key="<?= htmlspecialchars($key) ?>" data-title="<?= htmlspecialchars($title) ?>" value="<?= htmlspecialchars($val) ?>" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-primary transition-colors text-sm auto-save-input">
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -149,6 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
     inputs.forEach(input => {
         input.addEventListener('change', (e) => {
             const key = e.target.getAttribute('data-key');
+            const title = e.target.getAttribute('data-title');
             let value = e.target.value;
 
             if (e.target.type === 'checkbox') {
@@ -164,15 +176,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.target.type === 'text') {
                 clearTimeout(timeoutId);
                 timeoutId = setTimeout(() => {
-                    saveSetting(key, value);
+                    saveSetting(key, value, title);
                 }, 800); // 800ms bekle
             } else {
-                saveSetting(key, value);
+                saveSetting(key, value, title);
             }
         });
     });
 
-    function saveSetting(key, value) {
+    function saveSetting(key, value, title) {
         const formData = new FormData();
         formData.append('action', 'update_single_setting');
         formData.append('csrf_token', document.querySelector('input[name="csrf_token"]').value);
@@ -186,7 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .then(response => response.json())
         .then(data => {
             if(data.success) {
-                showToast(key + ' ayarı güncellendi!', 'success');
+                showToast(title + ' güncellendi!', 'success');
             } else {
                 showToast('Hata: ' + data.message, 'error');
             }
